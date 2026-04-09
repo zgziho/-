@@ -399,6 +399,8 @@
                                 </ComboBox>
                                 <Label Content="rpm"/>
 
+                                <Button Content="开始" Width="80" Height="30" Margin="5" Click="Button_Click" />
+
                             </StackPanel>
                         </StackPanel>
 

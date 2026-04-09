@@ -1,3 +1,4 @@
+using DocumentFormat.OpenXml.Drawing;
 using Microsoft.Extensions.DependencyInjection;
 using ScottPlot;
 using ScottPlot.Plottables;
@@ -28,6 +29,13 @@ namespace WpfApp1
         
        private DataLogger _dataLogger;
 
+        private Dictionary<int, DataLogger> _channelDataLoggers = new Dictionary<int, DataLogger>();
+
+
+        private DataStreamer _channel1;
+        private DataStreamer _channel2;
+        private DataStreamer _channel3;
+        private DataStreamer _channel4;
         /// <summary>
         /// 示波器刷新定时器 - 20Hz刷新率（50ms间隔）
         /// 用于定时从ViewModel获取最新数据并更新ScottPlot显示
@@ -89,6 +97,37 @@ namespace WpfApp1
         /// </summary>
         private void InitializeOscilloscope()
         {
+
+
+            // 缓冲区大小 20000 点
+            const int bufferSize = 20000;
+
+            // 通道1 
+            _channel1 = MainPlot.Plot.Add.DataStreamer(bufferSize);
+            _channel1.Color = Color.FromHex("#1E90FF");
+            _channel1.LineWidth = 2;
+            _channel1.ViewScrollLeft(); 
+
+            // 通道2 
+            _channel2 = MainPlot.Plot.Add.DataStreamer(bufferSize);
+            _channel2.Color = Color.FromHex("#FF4500");
+            _channel2.LineWidth = 2;
+            _channel2.ViewScrollLeft();
+
+            // 通道3 
+            _channel3 = MainPlot.Plot.Add.DataStreamer(bufferSize);
+            _channel3.Color = Color.FromHex("#32CD32"); 
+            _channel3.LineWidth = 2;
+            _channel3.ViewScrollLeft();
+
+            // 通道4 
+            _channel4 = MainPlot.Plot.Add.DataStreamer(bufferSize);
+            _channel4.Color = Color.FromHex("#FFA500"); 
+            _channel4.LineWidth = 2;
+            _channel4.ViewScrollLeft();
+
+
+
             // 创建示波器刷新定时器
             _oscilloscopeTimer = new System.Windows.Threading.DispatcherTimer();
             _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(50);
@@ -107,11 +146,12 @@ namespace WpfApp1
         {
             if (MainPlot != null)
             {
-                _dataLogger = MainPlot.Plot.Add.DataLogger();
-                _dataLogger.Color = Colors.DodgerBlue;
-                _dataLogger.LineWidth = 2;
+                //_dataLogger = MainPlot.Plot.Add.DataLogger();
+                //_dataLogger.Color = Colors.DodgerBlue;
+                //_dataLogger.LineWidth = 2;
 
-                _dataLogger.ViewSlide(width: 1000);
+                ////_dataLogger.ViewSlide(width: 1000);
+                //_dataLogger.ViewFull();
 
                 // 显示图例
                 MainPlot.Plot.Legend.FontName = "微软雅黑";
@@ -123,10 +163,6 @@ namespace WpfApp1
                 MainPlot.Plot.Grid.MajorLineColor = new Color("#CCCCCC");
                 //XY轴线颜色
                 MainPlot.Plot.Axes.Color(Colors.Black);
-
-                MainPlot.Plot.Title("示波器显示");
-                MainPlot.Plot.XLabel("采样点");
-                MainPlot.Plot.YLabel("数值");
                 MainPlot.Refresh();
             }
         }
@@ -159,39 +195,76 @@ namespace WpfApp1
                 if (IsChannelSelected(viewModel, channel))
                 {
                     // 从ViewModel获取最新数据
-                    var data = viewModel.GetOscilloscopeData(channel, OSCILLOSCOPE_POINT_COUNT);
-                    if (data.Length > 0)
+                    // var data = viewModel.GetOscilloscopeData(channel, OSCILLOSCOPE_POINT_COUNT);
+                    
+                    // 使用测试数据
+                    var data = GenerateTestData(channel, OSCILLOSCOPE_POINT_COUNT);
+
+                    switch (channel)
                     {
-                        // 将新数据添加到缓冲区
-                        lock (_scrollBuffers[channel])
-                        {
-                            foreach (var point in data)
-                            {
-                                _scrollBuffers[channel].Enqueue(point);
-                                // 保持缓冲区容量，超出部分从头部移除
-                                while(_scrollBuffers[channel].Count > 9000)
-                                {
-                                    _scrollBuffers[channel].Dequeue();
-                                }
-                            }
-                        }
-                        
-                        // 获取当前显示窗口的数据
-                        var scrollBuffer = _scrollBuffers[channel].ToArray();
-                        int startIndex = Math.Max(0, scrollBuffer.Length - DISPLAY_WINDOW_SIZE );
-                        int endIndex = Math.Min(scrollBuffer.Length , startIndex + DISPLAY_WINDOW_SIZE);
-                        
-                        if (startIndex < endIndex)
-                        {
-                            channelData[channel] = scrollBuffer[startIndex..endIndex];
-                        }
+                        case 1: _channel1.AddRange(data); break;
+                        case 2: _channel2.AddRange(data); break;
+                        case 3: _channel3.AddRange(data); break;
+                        case 4: _channel4.AddRange(data); break;
+
                     }
+
+
+
+                    //if (data.Length > 0)
+                    //{
+                    //    // 将新数据添加到缓冲区
+                    //    lock (_scrollBuffers[channel])
+                    //    {
+                    //        foreach (var point in data)
+                    //        {
+                    //            _scrollBuffers[channel].Enqueue(point);
+                    //            // 保持缓冲区容量，超出部分从头部移除
+                    //            while(_scrollBuffers[channel].Count > 9000)
+                    //            {
+                    //                _scrollBuffers[channel].Dequeue();
+                    //            }
+                    //        }
+                    //    }
+                        
+                    //    // 获取当前显示窗口的数据
+                    //    var scrollBuffer = _scrollBuffers[channel].ToArray();
+                    //    int startIndex = Math.Max(0, scrollBuffer.Length - DISPLAY_WINDOW_SIZE );
+                    //    int endIndex = Math.Min(scrollBuffer.Length , startIndex + DISPLAY_WINDOW_SIZE);
+                        
+                    //    if (startIndex < endIndex)
+                    //    {
+                    //        channelData[channel] = scrollBuffer[startIndex..endIndex];
+                    //    }
+                    //}
                 }
             }
+            MainPlot.Refresh();
 
             // 更新ScottPlot显示
-            UpdateScottPlotDisplay(channelData);
+            //UpdateScottPlotDisplay(channelData);
             
+        }
+
+        /// <summary>
+        /// 测试数据生成方法 - 用于测试示波器显示
+        /// </summary>
+        /// <param name="channel">通道号</param>
+        /// <param name="count">数据点数量</param>
+        /// <returns>生成的测试数据</returns>
+        private double[] GenerateTestData(int channel, int count)
+        {
+            double[] data = new double[count];
+            Random random = new Random(channel * 123);
+            double phase = channel * Math.PI / 2;
+            double frequency = 0.02 + channel * 0.01;
+            
+            for (int i = 0; i < count; i++)
+            {
+                data[i] = Math.Sin(i * frequency + phase) * 10 + random.NextDouble() * 2 - 1;
+            }
+            
+            return data;
         }
 
         /// <summary>
@@ -219,43 +292,57 @@ namespace WpfApp1
         /// <param name="channelData">通道数据字典</param>
         private void UpdateScottPlotDisplay(Dictionary<int, double[]> channelData)
         {
-            MainPlot.Plot.Clear();
-            _dataLogger = MainPlot.Plot.Add.DataLogger();
-            foreach (var (channel, data) in channelData)
+            bool channelsChanged = !_channelDataLoggers.Keys.SequenceEqual(channelData.Keys);
+            
+            if (channelsChanged)
             {
-                if (data.Length > 0)
+                MainPlot.Plot.Clear();
+                _channelDataLoggers.Clear();
+
+                foreach (var (channel, data) in channelData)
                 {
-                    // 生成X轴坐标（0到显示窗口大小）
-                    double[] xs = Enumerable.Range(0, data.Length).Select(i => (double)i).ToArray();
-                    var scatter = MainPlot.Plot.Add.Scatter(xs, data);
-                    scatter.LineWidth = 1;
-                    scatter.Color = GetChannelColor(channel);
-                    scatter.LegendText = $"通道{channel}";
+                    var dataLogger = MainPlot.Plot.Add.DataLogger();
+                    dataLogger.Color = GetChannelColor(channel);
+                    dataLogger.LineWidth = 1;
+                    
+                    _channelDataLoggers[channel] = dataLogger;
+                }
+                
+                if (channelData.Count > 1)
+                {
+                    MainPlot.Plot.ShowLegend();
                 }
             }
             
-            // 固定X轴范围 - 实现固定显示窗口
+            foreach (var (channel, data) in channelData)
+            {
+                if (data.Length > 0 && _channelDataLoggers.ContainsKey(channel))
+                {
+                    var dataLogger = _channelDataLoggers[channel];
+                    
+                    dataLogger.Clear();
+                    
+                    for (int i = 0; i < data.Length; i++)
+                    {
+                        dataLogger.Add((double)i, data[i]);
+                    }
+                }
+            }
+            
             if (channelData.Values.Any(d => d.Length > 0))
             {
                 MainPlot.Plot.Axes.SetLimitsX(0, DISPLAY_WINDOW_SIZE - 1);
                 
-                // 动态设置Y轴范围，包含所有通道数据
                 var allData = channelData.Values.SelectMany(d => d).ToArray();
                 if (allData.Length > 0)
                 {
                     double yMin = allData.Min();
                     double yMax = allData.Max();
                     double yRange = yMax - yMin;
-                    double margin = yRange * 0.1; // 10%边距
+                    double margin = yRange * 0.1;
                     
                     MainPlot.Plot.Axes.SetLimitsY(yMin - margin, yMax + margin);
                 }
-            }
-            
-            // 如果显示多个通道，显示图例
-            if (channelData.Count > 1)
-            {
-                MainPlot.Plot.ShowLegend();
             }
             
             MainPlot.Refresh();
@@ -596,6 +683,27 @@ namespace WpfApp1
                 }
             }
         }
-       
+        bool ok= false;
+        private void Button_Click(object sender, RoutedEventArgs e)
+        {
+            if (ok)
+            {
+                _oscilloscopeTimer.Tick += OscilloscopeTimer_Tick;
+                _channel1.ManageAxisLimits = true;
+                _channel2.ManageAxisLimits = true;
+                _channel3.ManageAxisLimits = true;
+                _channel4.ManageAxisLimits = true;
+                ok = false;
+            }
+            else
+            {
+                _oscilloscopeTimer.Tick -= OscilloscopeTimer_Tick;
+                _channel1.ManageAxisLimits = false;
+                _channel2.ManageAxisLimits = false;
+                _channel3.ManageAxisLimits = false;
+                _channel4.ManageAxisLimits = false;
+                ok = true;
+            }
+        }
     }
 }
