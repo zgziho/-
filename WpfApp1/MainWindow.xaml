@@ -1,0 +1,672 @@
+<Window x:Class="WpfApp1.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ScottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
+        xmlns:local="clr-namespace:WpfApp1"
+        xmlns:vm="clr-namespace:WpfApp1.ViewModels"
+        mc:Ignorable="d"
+        WindowStartupLocation="CenterScreen" 
+        Title="上位机" Height="800" Width="1100"
+        Background="#F0F0F0"
+        ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <ResourceDictionary>
+            <!-- 统一文本框样式 -->
+            <Style x:Key="ParameterTextBoxStyle" TargetType="TextBox">
+                <Setter Property="Margin" Value="5"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                <Setter Property="BorderBrush" Value="#CCCCCC"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Background" Value="White"/>
+                <Setter Property="Height" Value="25"/>
+                <Style.Triggers>
+                    <Trigger Property="IsReadOnly" Value="True">
+                        <Setter Property="Background" Value="#F5F5F5"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- 电流环模板 -->
+            <DataTemplate DataType="{x:Type vm:GroupAViewModel}">
+                <GroupBox Header="电流环" BorderBrush="#CCCCCC" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Column="0" Grid.Row="0" Content="DKp:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding Dkp}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="DKp"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="1" Content="QKp:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding Qkp}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="QKp"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="2" Content="Ki:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding Ki}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="Ki"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="3" Content="转矩环频带:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="3" Text="{Binding TorqueBand}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="TorqueBand"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="4" Content="电流给定:" VerticalAlignment="Center"/>
+
+                        <TextBox Grid.Column="1" Grid.Row="4"
+                                 Text="{Binding DataContext.CurrentSetpointValue, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=Explicit}"
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="电流给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="SetpointTextBox_MouseDoubleClick"
+                                 KeyDown="SetpointTextBox_KeyDown"
+                                 LostFocus="SetpointTextBox_LostFocus"/>
+                    </Grid>
+                </GroupBox>
+            </DataTemplate>
+            
+            <!-- 速度环模板 -->
+            <DataTemplate DataType="{x:Type vm:GroupBViewModel}">
+                <GroupBox Header="速度环">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Column="0" Grid.Row="0" Content="Kp:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding Kp}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="SpeedKp"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="1" Content="Ki:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding Ki}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="SpeedKi"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="2" Content="TFF:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding Tff}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="TFF"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="3" Content="速度环频带:" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="3" Text="{Binding SpeedBand}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="SpeedBand"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="4" Content="速度给定:" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="4"
+                                 Text="{Binding DataContext.CurrentSetpointValue, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=Explicit}"
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="速度给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="SetpointTextBox_MouseDoubleClick"
+                                 KeyDown="SetpointTextBox_KeyDown"
+                                 LostFocus="SetpointTextBox_LostFocus"/>
+                    </Grid>
+                  
+                </GroupBox>
+            </DataTemplate>
+            
+            <!-- 位置环模板 -->
+            <DataTemplate DataType="{x:Type vm:GroupCViewModel}">
+                <GroupBox Header="位置环" Height="auto">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Column="0" Grid.Row="0" Content="Kp:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding Kp}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="PosKp"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="1" Content="VFF:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding Vff}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="VFF"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+
+                        <Label Grid.Column="0" Grid.Row="2" Content="当前位置:" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding CurrentPosition}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 IsReadOnly="True"/> <!-- 当前位置为只读显示 -->
+
+                        <Label Grid.Column="0" Grid.Row="3" Content="位置给定:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="3"
+                                 Text="{Binding DataContext.CurrentSetpointValue, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=Explicit}"
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="位置给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="SetpointTextBox_MouseDoubleClick"
+                                 KeyDown="SetpointTextBox_KeyDown"
+                                 LostFocus="SetpointTextBox_LostFocus"/>
+
+
+                    </Grid>
+                </GroupBox>
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type vm:GroupDViewModel}">
+                <GroupBox Header="VF模式" Height="auto">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="auto"/>
+                            <RowDefinition Height="auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Label Content="占空比给定：" Grid.Column="0" Grid.Row="0" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="占空比给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Content="%" Grid.Column="2" Grid.Row="0" VerticalAlignment="Center"/>
+
+                        <Label Content="旋转频率：" Grid.Column="0" Grid.Row="1" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="旋转频率"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Content="Hz" Grid.Column="2" Grid.Row="1" VerticalAlignment="Center"/>
+
+                    </Grid>
+                </GroupBox>
+            </DataTemplate>
+
+
+            <DataTemplate DataType="{x:Type vm:GroupEViewModel}">
+                <GroupBox Header="变频器" Height="auto">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Column="0" Grid.Row="0" Content="旋转频率给定:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding RotateFreq}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="旋转频率给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Grid.Column="2" Grid.Row="0" Content="%"  VerticalAlignment="Center"/>
+
+                        <Label Grid.Column="0" Grid.Row="1" Content="电流比率给定:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding CurrentRatio}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="电流比率给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Grid.Column="2" Grid.Row="1" Content="%"  VerticalAlignment="Center"/>
+
+                        <Label Grid.Column="0" Grid.Row="2" Content="电流数字给定:" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding CurrentDigitalRef}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="电流数字给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Grid.Column="2" Grid.Row="2" Content="%"  VerticalAlignment="Center"/>
+
+                        <Label Grid.Column="0" Grid.Row="3" Content="电流峰值给定:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="3" Text="{Binding CurrentPeak}" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="电流峰值给定"
+                                 IsReadOnly="True"
+                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Grid.Column="2" Grid.Row="3" Content="%" VerticalAlignment="Center"/>
+
+
+                    </Grid>
+                </GroupBox>
+            </DataTemplate>
+
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="30"></RowDefinition>
+            <RowDefinition Height="*"></RowDefinition>
+            <RowDefinition Height="30"></RowDefinition> 
+        </Grid.RowDefinitions>
+
+
+        <!--菜单栏-->
+
+        <StackPanel Grid.Row="0" VerticalAlignment="Top">
+            <Menu Height="30" Background="#E0E0E0">
+                <MenuItem Header="文件" FontSize="14">
+                    <MenuItem Header="连接设备" FontSize="12">
+                        <MenuItem Header="串口连接" Command="{Binding OpenSerialPortCommand}" ></MenuItem>
+                        <MenuItem Header="其他连接" Command="{Binding OpenOtherConnectionCommand}" ></MenuItem>
+                    </MenuItem>
+
+                    <MenuItem Header="参数表" Command="{Binding OpenExcelCommand}" FontSize="12"/>
+                </MenuItem>
+                <MenuItem Header="驱动器" FontSize="14">
+                </MenuItem>
+                <MenuItem Header="工具" FontSize="14">
+                </MenuItem>
+                <MenuItem Header="帮助" FontSize="14">
+                </MenuItem>
+            </Menu>
+        </StackPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2.2*"/>
+                <ColumnDefinition Width="auto"/>
+                <ColumnDefinition Width="auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="2*"/>
+                    <RowDefinition Height="auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"  BorderThickness="1" BorderBrush="#CCCCCC" CornerRadius="20" Margin="5">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Bottom">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="5 5 5 5"  Orientation="Horizontal">
+                                <Label Margin="5 0 0 0 " Content="CH1:" Foreground="Blue" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox SelectedItem="{Binding Channel1Selected}" ItemsSource="{Binding ChannelOptions}" Width="80" />
+                                <Label Margin="5 0 0 0 " Content="CH2:" Foreground="Red"  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox SelectedItem="{Binding Channel2Selected}" ItemsSource="{Binding ChannelOptions}" Width="80"/>
+                                <Label Margin="5 0 0 0 " Content="CH3:" Foreground="Green"  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox SelectedItem="{Binding Channel3Selected}" ItemsSource="{Binding ChannelOptions}" Width="80"/>
+                                <Label Margin="5 0 0 0 " Content="CH4:"  Foreground="Orange"  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox SelectedItem="{Binding Channel4Selected}" ItemsSource="{Binding ChannelOptions}" Width="80"/>
+                            </StackPanel>
+                            
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="5 0 5 10" Orientation="Horizontal">
+                                <Label Content="采样时间:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox  >
+                                    <ComboBoxItem Content="2.56s" IsSelected="True"></ComboBoxItem>
+                                </ComboBox>
+
+
+                                <Label Content="触发方式:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox >
+                                    <ComboBoxItem Content="立即" IsSelected="True"></ComboBoxItem>
+                                </ComboBox>
+                                <CheckBox Margin="5 5 0 5" VerticalAlignment="Center"/>
+                                <Label Content="持续"/>
+
+
+                                <Label Content="触发源:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox  >
+                                    <ComboBoxItem Content="速度给定" IsSelected="True"></ComboBoxItem>
+                                </ComboBox>
+
+
+                                <Label Content="触发水平:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox >
+                                    <ComboBoxItem Content="0" IsSelected="True"></ComboBoxItem>
+                                </ComboBox>
+                                <Label Content="rpm"/>
+
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Margin="10" BorderThickness="1" BorderBrush="#CCCCCC">
+                            <ScottPlot:WpfPlot x:Name="MainPlot"  />
+                        </Border>
+                    </DockPanel>
+                </Border>
+
+                <GridSplitter Grid.Row="1" Height="5"  BorderBrush="Black" HorizontalAlignment="Stretch" />
+
+                <Border Grid.Row="2"  BorderThickness="1" BorderBrush="#CCCCCC"  CornerRadius="20" Margin="5" ClipToBounds="True">
+                    <Grid ClipToBounds="True" Margin="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.7*" ></ColumnDefinition>
+                            <ColumnDefinition Width="5*"></ColumnDefinition>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="5" >
+                            
+                            <StackPanel Orientation="Horizontal" Margin="5">
+                                <Label  Content="控制模式：" FontSize="14"/>
+                                <ComboBox ItemsSource="{Binding GroupOptions}"
+                                            SelectedItem="{Binding SelectedOption}" FontSize="14">
+                                </ComboBox>
+                            </StackPanel>
+
+
+                            <StackPanel Orientation="Horizontal" Margin="5">
+                                <Label  Content="信号类型："  FontSize="14"/>
+                                <ComboBox  FontSize="14">
+                                    <ComboBoxItem Content="一二三四" IsSelected="True"/>
+                                </ComboBox>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="5">
+                                <Label  Content="发生频率："  FontSize="14"/>
+                                <TextBox Width="64"  FontSize="14"/>
+                                <Label Content="Hz"/>
+                            </StackPanel>
+
+                          
+                            
+                        </StackPanel>
+                        <Grid Grid.Column="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition></ColumnDefinition>
+                                <ColumnDefinition></ColumnDefinition>
+                            </Grid.ColumnDefinitions>
+                            <ContentControl
+                                Grid.Column="0"
+                                Content="{Binding SelectedGroup}"
+                               VerticalAlignment="Stretch"
+                               HorizontalAlignment="Stretch">
+                            </ContentControl>
+
+                            <Grid Grid.Column="1">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition/>
+                                    <RowDefinition />
+                                </Grid.RowDefinitions>
+                                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                    <Button Content="{Binding ForwardJogButtonText}"  Margin="10 30 10 30"
+                                            Click="ForwardJog_Click"
+                                            PreviewMouseLeftButtonDown="ForwardJog_PreviewMouseLeftButtonDown"
+                                            PreviewMouseLeftButtonUp="ForwardJog_PreviewMouseLeftButtonUp"
+                                            MouseLeave="ForwardJog_MouseLeave" Width="70"/>
+                                    <Button Content="{Binding ReverseJogButtonText}"  Margin="5 30 5 30"
+                                            Click="ReverseJog_Click"
+                                            PreviewMouseLeftButtonDown="ReverseJog_PreviewMouseLeftButtonDown"
+                                            PreviewMouseLeftButtonUp="ReverseJog_PreviewMouseLeftButtonUp"
+                                            MouseLeave="ReverseJog_MouseLeave" Width="70"/>
+                                    <Button Content="{Binding EnableButtonText}"  Margin="10 30 10 30"
+                                            Command="{Binding ToggleEnableCommand}" Width="70"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Orientation="Horizontal">
+                                    <Button Content="清除故障"  Margin="10 30 10 30" Width="70"/>
+                                    <Button Content="系统复位"  Margin="5 30 5 30" Width="70"/>
+                                    <Button Content="位置清零"  Margin="10 30 10 30" Width="70"/>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+
+
+                    </Grid>
+                </Border>
+
+            </Grid>
+
+            <GridSplitter Grid.Column="1" Width="5"  BorderBrush="Black" HorizontalAlignment="Stretch" />
+
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!--第一组：电压、驱动器温度、电机温度-->
+                <Border Grid.Row="0" BorderThickness="1" BorderBrush="#CCCCCC" Margin="5" CornerRadius="20">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="1*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0"  Orientation="Horizontal">
+                            <Label Content="电压:" FontSize="20" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding Voltage}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Border>
+
+                        </StackPanel >
+
+                        <StackPanel  Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal">
+                            <Label Content="驱动器温度:"  FontSize="20" VerticalAlignment="Center"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding DriveTemperature}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Border>
+
+                        </StackPanel>
+
+                        <StackPanel  Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                            <Label Content="电机温度:" FontSize="20" Grid.Row="0" VerticalAlignment="Center" Grid.Column="2"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding MotorTemperature}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!--第二组：电流给定、电流反馈（峰值）、电流有效值-->
+                <Border Grid.Row="1" BorderThickness="1" BorderBrush="#CCCCCC" Margin="4" CornerRadius="20">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="1*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0"  Orientation="Horizontal">
+                            <Label Content="电流给定:" FontSize="20" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding CurrentSet}"  VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Border>
+                        </StackPanel >
+
+                        <StackPanel  Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal">
+                            <Label Content="电流反馈(峰值):" VerticalAlignment="Center" FontSize="20" />
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding CurrentFeedbackPeak}"  VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel  Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                            <Label Content="电流有效值:" VerticalAlignment="Center" FontSize="20"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding CurrentRMS}"   VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!--第三组：速度给定、速度反馈-->
+                <Border Grid.Row="2" BorderThickness="1" BorderBrush="#CCCCCC" Margin="5" CornerRadius="20">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="1*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0"  Orientation="Horizontal">
+                            <Label Content="速度给定:" FontSize="20" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding SpeedSet}"  VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel >
+
+                        <StackPanel  Grid.Row="1" Grid.Column="0" Orientation="Horizontal">
+                            <Label Content="速度反馈:" FontSize="20" VerticalAlignment="Center"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding SpeedFeedback}"  VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!--第四组：位置给定、位置反馈-->
+                <Border Grid.Row="3" BorderThickness="1" BorderBrush="#CCCCCC" Margin="5" CornerRadius="20">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="1*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0"  Orientation="Horizontal">
+                            <Label Content="位置给定:" FontSize="20" VerticalAlignment="Center"  HorizontalAlignment="Left"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding PositionSet}"  VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel >
+
+                        <StackPanel  Grid.Row="1" Grid.Column="0" Orientation="Horizontal">
+                            <Label Content="位置反馈:" VerticalAlignment="Center" FontSize="20"/>
+                            <Border BorderBrush="#CCCCCC"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Height="30" Width="40">
+                                <TextBlock Text="{Binding PositionFeedback}"   VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!--状态栏-->
+        <Border Grid.Row="2" BorderThickness="1" BorderBrush="#CCCCCC" CornerRadius="10 10 0 0">
+            <StackPanel ClipToBounds="True" Orientation="Horizontal" VerticalAlignment="Center" Background="Transparent" Margin="0">
+                <Label Content="系统状态: " HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontWeight="Bold" Margin="20 0 0 0"/>
+
+            </StackPanel>
+        </Border>
+
+
+    </Grid>
+</Window>

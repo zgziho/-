@@ -1,0 +1,201 @@
+<Window x:Class="WpfApp1.Views.OtherConnection"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:local="clr-namespace:WpfApp1.Views"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        mc:Ignorable="d"
+        Title="其他连接"
+        Height="400" Width="600"
+        Background="#F0F0F0">
+    <Grid >
+        <Grid.RowDefinitions>
+        <RowDefinition Height="150"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="90"/>
+        </Grid.RowDefinitions>
+        
+        <Border Grid.Row="0" BorderThickness="1" BorderBrush="#CCCCCC">
+            <Grid Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition/>
+                    <RowDefinition/>
+                    <RowDefinition/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+                
+                <!-- 工作模式设置 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                    <Label Content="通道选择 :" VerticalContentAlignment="Center"/>
+                    <ComboBox  Width="100" VerticalAlignment="Center" Margin="0 0 10 0" SelectedIndex="{Binding SelectedChannelIndex}">
+                        <ComboBoxItem Content="通道0"/>
+                        <ComboBoxItem Content="通道1"/>
+                    </ComboBox>
+                    <Label Content="工作模式 :" VerticalContentAlignment="Center"/>
+                    <ComboBox  Width="100" VerticalAlignment="Center" Margin="0 0 10 0" SelectedIndex="{Binding IsNormalMode}">
+                        <ComboBoxItem Content="正常模式"/>
+                        <ComboBoxItem Content="只听模式"/>
+                    </ComboBox>
+                    <CheckBox VerticalContentAlignment="Center" Content="终端电阻使能" Margin="0 0 10 0" IsChecked="{Binding IsTerminationEnable}"/>
+                </StackPanel>
+                
+                <!-- CAN FD 标准和波特率设置 -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal">
+                    <Label Content="CANFD标准 :" VerticalContentAlignment="Center"/>
+                    <ComboBox Width="100" VerticalAlignment="Center" Margin="0 0 10 0" SelectedIndex="{Binding IsIsoStandard}">
+                        <ComboBoxItem Content="CANFD ISO"/>
+                        <ComboBoxItem Content="CANFD BOSCH"/>
+                    </ComboBox>
+
+                    <Label Content="仲裁域波特率 :" VerticalContentAlignment="Center"/>
+                    <ComboBox Width="100" VerticalAlignment="Center" Margin="0 0 10 0" SelectedIndex="{Binding SelectedArbitrationBaudrateIndex}">
+                        <ComboBoxItem Content="1Mbps 80%"/>
+                        <ComboBoxItem Content="800kbps 80%"/>
+                        <ComboBoxItem Content="500kbps 80%"/>
+                        <ComboBoxItem Content="250kbps 80%"/>
+                        <ComboBoxItem Content="125kbps 80%"/>
+                        <ComboBoxItem Content="100kbps 80%"/>
+                        <ComboBoxItem Content="50kbps 80%"/>
+                    </ComboBox>
+
+                    <Label Content="数据域波特率 :" VerticalContentAlignment="Center"/>
+                    <ComboBox   Width="100" VerticalAlignment="Center" Margin="0 0 10 0" SelectedIndex="{Binding SelectedDataBaudrateIndex}">
+                        <ComboBoxItem Content="5Mbps 75%"/>
+                        <ComboBoxItem Content="4Mbps 75%"/>
+                        <ComboBoxItem Content="2Mbps 75%"/>
+                        <ComboBoxItem Content="1Mbps 75%"/>
+                        <ComboBoxItem Content="800kbps 75%"/>
+                        <ComboBoxItem Content="500kbps 75%"/>
+                        <ComboBoxItem Content="250kbps 75%"/>
+                        <ComboBoxItem Content="125kbps 75%"/>
+                        <ComboBoxItem Content="100kbps 75%"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- 自定义波特率设置 -->
+                <StackPanel Grid.Row="2" Orientation="Horizontal">
+                    <CheckBox Content="自定义波特率"  VerticalContentAlignment="Center" Margin="0 0 10 0" IsChecked="{Binding IsCustomBaudrate}"/>
+                    <TextBox Width="100"  Text="{Binding CustomBaudrate}" IsEnabled="{Binding IsCustomBaudrateTetx}" VerticalAlignment="Center"></TextBox>
+                </StackPanel>
+
+                <!-- 滤波模式设置 -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal">
+                    <Label Content="滤波模式 :" VerticalContentAlignment="Center"/>
+                    <ComboBox  Width="100"  VerticalAlignment="Center" Margin="0 0 10 0" SelectedIndex="{Binding SelectedFilterModeIndex}">
+                        <ComboBoxItem Content="标准帧"/>
+                        <ComboBoxItem Content="扩展帧"/>
+                        <ComboBoxItem Content="禁能"/>
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid  Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition ></ColumnDefinition>
+                <ColumnDefinition></ColumnDefinition>
+            </Grid.ColumnDefinitions>
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                <TextBox x:Name="MessageTextBox" Text="{Binding ListBoxContent}" TextWrapping="Wrap" BorderThickness="0" IsReadOnly="True" AcceptsReturn="True" ScrollViewer.CanContentScroll="True" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                    <i:Interaction.Triggers>
+                        <i:DataTrigger Binding="{Binding ScrollToEnd}" Value="True">
+                            <i:InvokeCommandAction Command="{x:Static local:OtherConnection.ScrollToEndCommand}" CommandParameter="{Binding ElementName=MessageTextBox}"/>
+                        </i:DataTrigger>
+                    </i:Interaction.Triggers>
+                </TextBox>
+            </ScrollViewer>
+            <Button Grid.Column="1" Content="发送"  Command="{Binding SendmessageCommand}"></Button>
+        </Grid>
+        
+        
+        <Border Grid.Row="2"  Margin="5" CornerRadius="20"  BorderThickness="1" BorderBrush="#CCCCCC">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="0.7*"></ColumnDefinition>
+                    <ColumnDefinition Width="0.5*"></ColumnDefinition>
+                    <ColumnDefinition Width="AUTO"></ColumnDefinition>
+                    <ColumnDefinition Width="AUTO"></ColumnDefinition>
+                    <ColumnDefinition Width="AUTO"></ColumnDefinition>
+                    <ColumnDefinition Width="AUTO"></ColumnDefinition>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="当前状态:" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"  FontSize="14"/>
+                <TextBlock Grid.Column="1" Text="{Binding ConnectionStatus}" HorizontalAlignment="Left" VerticalAlignment="Center"  FontSize="13" FontWeight="Bold"/>
+
+                <Button Content="打开设备" 
+                         Grid.Column="2"
+                         Command="{Binding OpenDeviceCommand}" 
+                         Width="80"
+                         Height="35"
+                         IsEnabled="{Binding IsDeviceOpenEnabled}"
+                         FontSize="13"
+                         FontWeight="Medium">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDeviceOpenEnabled}" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="初始化CAN" 
+                        Grid.Column="3"
+                         Command="{Binding InitializeCommand}" 
+                         Width="90"
+                         Height="35"
+                         IsEnabled="{Binding IsInitializeEnabled}"
+                         FontSize="13"
+                         FontWeight="Medium">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsInitializeEnabled}" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="启动CAN" 
+                        Grid.Column="4"
+                         Command="{Binding StartCommand}" 
+                         Width="80"
+                         Height="35"
+                         IsEnabled="{Binding IsStartEnabled}"
+                         FontSize="13"
+                         FontWeight="Medium">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStartEnabled}" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="关闭设备" 
+                        Grid.Column="5"
+                         Command="{Binding CloseDeviceCommand}" 
+                         Width="80"
+                         Height="35"
+                         Margin="0 0 10 0"
+                         IsEnabled="{Binding IsCloseEnabled}"
+                         FontSize="13"
+                         FontWeight="Medium">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsCloseEnabled}" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

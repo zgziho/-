@@ -1,0 +1,174 @@
+<Window
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:WpfApp1.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="d" x:Class="WpfApp1.Views.Excel"
+        Title="参数管理" Height="600" Width="1200"
+        WindowStartupLocation="CenterScreen"
+        Background="#F0F0F0"
+
+    >
+    <Window.Resources>
+        <ResourceDictionary>
+            <local:ParsYSColorConverter x:Key="ParsYSColor"/>
+            <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="auto"/>
+            <ColumnDefinition Width="7*"/>
+        </Grid.ColumnDefinitions>
+
+        <Grid Grid.Column="0" >
+            <Expander ExpandDirection="Right">
+                <Grid Margin="10" >
+                <Expander Header="伺服系统">
+                    <Expander.Template>
+                        <ControlTemplate TargetType="Expander">
+                            <Border BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="5">
+                                <DockPanel>
+                                    <ToggleButton x:Name="ExpanderHeader"
+                                      Content="{TemplateBinding Header}"
+                                      IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      DockPanel.Dock="Top"
+                                      Foreground="Black"
+                                      FontWeight="Bold"
+                                      FontSize="20"
+                                      Padding="5">
+                                        <ToggleButton.Template>
+                                            <ControlTemplate TargetType="ToggleButton">
+                                                <Border Background="Transparent">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </ToggleButton.Template>
+                                    </ToggleButton>
+                                    <ContentPresenter x:Name="ExpandSite"
+                                           Visibility="Collapsed"
+                                           DockPanel.Dock="Bottom"/>
+                                </DockPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsExpanded" Value="True">
+                                    <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Expander.Template>
+                    <ListBox x:Name="NavListBox" DockPanel.Dock="Top"
+                          Background="#F0F0F0"
+                          BorderThickness="0"
+                          SelectionChanged="NavListBox_SelectionChanged">
+                        <ListBoxItem Content="实时数据" Tag="1"/>
+                        <ListBoxItem Content="用户参数" Tag="2"/>
+                        <ListBoxItem Content="电流环参数" Tag="3"/>
+                        <ListBoxItem Content="速度环参数" Tag="4"/>
+                        <ListBoxItem Content="位置环参数" Tag="5"/>
+                    </ListBox>
+                </Expander>
+                </Grid>
+            </Expander>
+        </Grid>
+
+        
+        
+        <Grid Grid.Column="1" Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+
+
+            <!-- 搜索区域 -->
+            <Border Grid.Row="0" BorderThickness="1" BorderBrush="#CCCCCC" Padding="10" Margin="0,0,0,10">
+                <StackPanel Orientation="Horizontal">
+                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                         Width="200" Margin="0,0,5,0" IsReadOnly="False"/>
+                    <Button Content="搜索" Command="{Binding SearchCommand}" Width="60" Margin="0,0,5,0"/>
+                    <Button Content="刷新" Command="{Binding RefreshCommand}" Width="60" Margin="0,0,5,0"/>
+                    <Label  Content="切换参数列表：" Margin="0,0,5,0"/>
+                    <ComboBox Margin="0,0,5,0" Width="auto"
+                         ItemsSource="{Binding ParList}"
+                         SelectedItem="{Binding Document, UpdateSourceTrigger=PropertyChanged}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static local:PathConverter.GetFileName}}" 
+                                       Foreground="Black" FontSize="13"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Content="读取所有" Command="{Binding ReadAsyncCommand}" Margin="0,0,5,0" Width="120"/>
+                    <Button Content="另存为" Command="{Binding DownloadCommand}" Width="60"/>
+                </StackPanel>
+            </Border>
+
+
+
+            <!-- DataGrid 显示参数列表 -->
+            <DataGrid Grid.Row="1" 
+                  ItemsSource="{Binding Pers}" 
+                  SelectedItem="{Binding SelectedPars}"
+                  CanUserAddRows="False"
+                  AutoGenerateColumns="False" 
+                  IsReadOnly="False" 
+                  CellEditEnding="DataGrid_CellEditEnding"
+                  Margin="0,0,0,10"
+                  BorderThickness="1"
+                  FontSize="12">
+                <DataGrid.RowStyle>
+                    <Style TargetType="{x:Type DataGridRow}">
+                        <Setter Property="Background" Value="{Binding ParsYS, Converter={StaticResource ParsYSColor}}"/>
+                    </Style>
+                </DataGrid.RowStyle>
+                <DataGrid.Columns>
+                    <!--<DataGridTextColumn Header="序号" Binding="{Binding Id, UpdateSourceTrigger=PropertyChanged}" Width="50"/>-->
+                    <DataGridTextColumn Header="地址ID" Binding="{Binding ParsID, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                    <DataGridTextColumn Header="数据名称" Binding="{Binding ParsNM, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
+                    <DataGridTextColumn Header="数据值" Binding="{Binding ParsVA, UpdateSourceTrigger=PropertyChanged}" Width="100"/>
+                    <DataGridTextColumn Header="单位" Binding="{Binding ParsDW, UpdateSourceTrigger=PropertyChanged}" Width="40"/>
+                    <DataGridTextColumn Header="数据类型" Binding="{Binding ParsLX, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                    <DataGridTextColumn Header="属性" Binding="{Binding ParsSX, UpdateSourceTrigger=PropertyChanged}" Width="40"/>
+                    <DataGridTextColumn Header="数据范围" Binding="{Binding ParsFW, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                    <DataGridTextColumn Header="显示方式" Binding="{Binding ParsXSFS, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                    <DataGridTextColumn Header="数据系数" Binding="{Binding ParsXS, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                    <DataGridTextColumn Header="显示小数位" Binding="{Binding ParsXSW, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                    <DataGridTextColumn Header="显示" Binding="{Binding ParsLB, UpdateSourceTrigger=PropertyChanged}" Width="40"/>
+                    <DataGridTextColumn Header="背景颜色" Binding="{Binding ParsYS, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                    <DataGridTextColumn Header="备注" Binding="{Binding ParsBZ, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <Grid Grid.Row="1"
+            Visibility="{Binding IsProcessing}">
+                <Border
+                BorderThickness="1"
+                Width="300" Height="180"
+                CornerRadius="10" 
+                Background="#F0F0F0"
+                BorderBrush="#CCCCCC"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                >
+                    <StackPanel Margin="20" VerticalAlignment="Center">
+                        <TextBlock Text="正在处理，请稍后..." 
+                        HorizontalAlignment="Center"
+                        Margin="0,0,0,15"
+                        FontSize="14"
+                        FontWeight="Bold"/>
+                        <ProgressBar Value="{Binding ProgressValue}" 
+                        Minimum="0" Maximum="{Binding MaxProgressValue}"
+                        Height="20" Width="250" 
+                        BorderThickness="1"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+        </Grid>
+    </Grid>
+</Window>
