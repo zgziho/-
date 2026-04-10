@@ -77,7 +77,7 @@ namespace WpfApp1
         /// </summary>
         private readonly Dictionary<string, JogConfigItem> _jogConfigs = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>
-        /// 当前控制模式对应的“给定”名称（电流给定/速度给定/位置给定）
+        /// 当前控制模式对应的“给定”名称
         /// </summary>
         private string _currentSetpointConfigName = "电流给定";
         /// <summary>
@@ -249,21 +249,28 @@ namespace WpfApp1
                 }
             }
 
-            public double[] ReadLatest(int count)
+            /// <summary>
+            /// 从指定读取索引开始读取指定数量的数据点
+            /// </summary>
+            /// <param name="readIndex">读取索引</param>
+            /// <param name="count">要读取的数据点数量</param>
+            /// <returns>读取的数据点数组</returns>
+            public double[] ReadFromIndex(ref int readIndex, int count)
             {
                 lock (_lock)
                 {
                     if (count <= 0 || _count == 0) return Array.Empty<double>();
-                    if (count > _count) count = _count;
-
-                    var result = new double[count];
-                    int startIndex = (_writeIndex - count + Capacity) % Capacity;
-
-                    for (int i = 0; i < count; i++)
+                    
+                    int availablePoints = Math.Min(count, _count);
+                    
+                    var result = new double[availablePoints];
+                    Debug.WriteLine($"{availablePoints}");
+                    for (int i = 0; i < availablePoints; i++)
                     {
-                        result[i] = _buffer[(startIndex + i) % Capacity];
+                        result[i] = _buffer[readIndex];
+                        readIndex = (readIndex + 1) % Capacity;
                     }
-
+                    
                     return result;
                 }
             }
@@ -293,6 +300,17 @@ namespace WpfApp1
         /// 示波器数据锁 - 确保多线程安全访问
         /// </summary>
         private readonly object[] _oscilloscopeLocks = new object[] { new(), new(), new(), new(), new() };
+
+        /// <summary>
+        /// 示波器读取索引 - 每个通道独立的读取索引，确保数据连续性
+        /// </summary>
+        private readonly Dictionary<int, int> _readIndices = new()
+        {
+            { 1, 0 },  // 通道1初始读取索引
+            { 2, 0 },  // 通道2初始读取索引
+            { 3, 0 },  // 通道3初始读取索引
+            { 4, 0 }   // 通道4初始读取索引
+        };
 
         /// <summary>
         /// 下拉框状态：是否有通道被选择
@@ -1800,7 +1818,10 @@ namespace WpfApp1
         {
             lock (_oscilloscopeLocks[channel])
             {
-                return _oscilloscopeBuffers[channel].ReadLatest(pointCount);
+                int readIndex = _readIndices[channel];
+                var data = _oscilloscopeBuffers[channel].ReadFromIndex(ref readIndex, pointCount);
+                _readIndices[channel] = readIndex;
+                return data;
             }
         }
 

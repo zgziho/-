@@ -228,6 +228,9 @@ public sealed class OtherConnectionService
         _modbusService = modbusService;
     }
 
+
+    //[DllImport("zlgcan.dll", EntryPoint = "ZCAN_ClearBuffer", CallingConvention = CallingConvention.Cdecl)]
+    //public static extern uint ZCAN_ClearBuffer(object obj);
     /// <summary>
     /// 打开设备
     /// </summary>
@@ -607,6 +610,7 @@ public sealed class OtherConnectionService
     /// <returns>响应数据</returns>
     private byte[] ReceiveCanResponse(int channelIndex)
     {
+        
         var currentChannelHandle = _channelHandles[channelIndex];
         var startTime = DateTime.UtcNow;
 
