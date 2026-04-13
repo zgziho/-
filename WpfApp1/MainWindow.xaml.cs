@@ -68,7 +68,17 @@ namespace WpfApp1
         /// <summary>
         /// 最大缓冲区大小（防止内存无限增长）
         /// </summary>
-        private const int MAX_BUFFER_SIZE = 100000;
+        private const int MAX_BUFFER_SIZE = 10000;
+        
+        /// <summary>
+        /// 总共接收的数据点数（用于X轴无限增长）
+        /// </summary>
+        private long _totalPointCount = 0;
+        
+        /// <summary>
+        /// 缓冲区起始点的全局索引（当缓冲区滚动时更新）
+        /// </summary>
+        private long _bufferStartIndex = 0;
         
         /// <summary>
         /// 触发水平值（上升沿触发电平）
@@ -181,10 +191,10 @@ namespace WpfApp1
                 if (IsChannelSelected(viewModel, channel))
                 {
                     // 获取最新数据
-                    var data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
+                    //var data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
 
                     // 使用测试数据
-                    //var data = GenerateTestDataWithTrigger(channel, BATCH_POINT_COUNT);
+                    var data = GenerateTestDataWithTrigger(channel, BATCH_POINT_COUNT);
 
                     // 将数据添加到缓冲区
                     AddDataToBuffer(channel, data);
@@ -203,20 +213,19 @@ namespace WpfApp1
             var buffer = _dataBuffers[channel];
             buffer.AddRange(data);
             
+            // 更新全局数据计数
+            _totalPointCount += data.Length;
+            
             // 限制缓冲区大小
             if (buffer.Count > MAX_BUFFER_SIZE)
             {
                 int removeCount = buffer.Count - MAX_BUFFER_SIZE;
                 buffer.RemoveRange(0, removeCount);
                 
-                // 调整显示起始索引
-                if (_displayStartIndex > 0)
-                {
-                    _displayStartIndex = Math.Max(0, _displayStartIndex - removeCount);
-                }
+                // 更新缓冲区起始索引（X轴无限增长）
+                _bufferStartIndex += removeCount;
             }
         }
-
         /// <summary>
         /// 更新图表显示
         /// </summary>
@@ -240,13 +249,13 @@ namespace WpfApp1
                     var buffer = _dataBuffers[channel];
                     if (buffer.Count == 0) continue;
                     
-                    // 绘制完整的历史数据
+                    // 绘制完整的历史数据（使用全局索引，实现X轴无限增长）
                     double[] xData = new double[buffer.Count];
                     double[] yData = new double[buffer.Count];
                     
                     for (int i = 0; i < buffer.Count; i++)
                     {
-                        xData[i] = i;
+                        xData[i] = _bufferStartIndex + i; // 使用全局索引
                         yData[i] = buffer[i];
                         allDataPoints.Add(buffer[i]);
                     }
@@ -281,8 +290,9 @@ namespace WpfApp1
                 var firstBuffer = _dataBuffers.Values.FirstOrDefault(b => b.Count > 0);
                 if (firstBuffer != null)
                 {
-                    int endIndex = firstBuffer.Count;
-                    int startIndex = Math.Max(0, endIndex - DISPLAY_WINDOW_SIZE);
+                    // 使用全局索引设置X轴范围（实现X轴无限增长）
+                    long endIndex = _bufferStartIndex + firstBuffer.Count;
+                    long startIndex = Math.Max(_bufferStartIndex, endIndex - DISPLAY_WINDOW_SIZE);
                     MainPlot.Plot.Axes.SetLimitsX(startIndex, endIndex);
                 }
             }
@@ -315,11 +325,7 @@ namespace WpfApp1
                 // 添加一些噪声
                 value += random.NextDouble() * 2 - 1;
                 
-                //// 模拟上升沿触发效果 - 偶尔添加一个阶跃信号
-                //if (random.NextDouble() < 0.05) // 5%概率产生阶跃
-                //{
-                //    value += 15; // 阶跃上升
-                //}
+           
                 
                 data[i] = value;
             }
