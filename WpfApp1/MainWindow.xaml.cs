@@ -17,102 +17,358 @@ using System.Windows.Input;
 
 namespace WpfApp1
 {
+    /// <summary>
+    /// 触发采集状态枚举
+    /// </summary>
+    public enum AcquisitionState
+    {
+        /// <summary>
+        /// 等待触发状态：持续更新预触发缓冲区，检测上升沿触发条件
+        /// </summary>
+        WaitingForTrigger,
+
+        /// <summary>
+        /// 捕获后触发状态：触发条件满足后，收集触发点之后的数据
+        /// </summary>
+        CapturingPostTrigger,
+
+        /// <summary>
+        /// Holdoff状态：采集完成后等待指定批次，防止抖动重复触发
+        /// </summary>
+        Holdoff
+    }
+
+    /// <summary>
+    /// 单通道触发采集管理器
+    /// <para>负责上升沿检测、预触发缓冲、跨批次数据拼接</para>
+    /// <para>采用有限状态机模式管理采集流程，支持流式数据分批处理</para>
+    /// </summary>
+    public class TriggeredAcquisitionManager
+    {
+        #region 配置参数字段
+
+        /// <summary>
+        /// 预触发点数（触发点之前需要保存的样本数量）
+        /// </summary>
+        private readonly int _preTriggerPoints;
+
+        /// <summary>
+        /// 总显示窗口点数（预触发 + 后触发）
+        /// </summary>
+        private readonly int _totalDisplayPoints;
+
+        /// <summary>
+        /// 触发电平阈值（上升沿检测的参考电平）
+        /// </summary>
+        private double _triggerLevel;
+
+        #endregion
+
+        #region 状态管理字段
+
+        /// <summary>
+        /// 当前采集状态
+        /// </summary>
+        private AcquisitionState _state = AcquisitionState.WaitingForTrigger;
+
+        /// <summary>
+        /// 上一个采样值（用于上升沿检测的边缘比较）
+        /// </summary>
+        private double _lastSample = double.MinValue;
+
+        #endregion
+
+        #region 数据缓冲字段
+
+        /// <summary>
+        /// 预触发环形缓冲区：保存触发点之前的样本数据
+        /// </summary>
+        private readonly Queue<double> _preTriggerBuffer;
+
+        /// <summary>
+        /// 后触发缓冲区：保存触发点及之后的样本数据
+        /// </summary>
+        private readonly List<double> _postTriggerBuffer;
+
+        /// <summary>
+        /// 还需采集的后触发样本数量
+        /// </summary>
+        private int _postTriggerNeeded;
+
+        #endregion
+
+        #region Holdoff 防抖字段
+
+        /// <summary>
+        /// Holdoff 计数器：剩余需要跳过的批次数量
+        /// </summary>
+        private int _holdoffCounter = 0;
+
+        /// <summary>
+        /// Holdoff 批次数量常量：每次采集完成后跳过的批次数
+        /// </summary>
+        private const int HOLDOFF_BATCHES = 2;
+
+        #endregion
+
+        #region 事件定义
+
+        /// <summary>
+        /// 采集完成事件：当完整的显示窗口数据捕获完成时触发
+        /// </summary>
+        /// <param name="capturedData">捕获的完整显示窗口数据（长度为 totalDisplayPoints）</param>
+        public event Action<double[]>? CaptureCompleted;
+
+        #endregion
+
+        #region 属性
+
+        /// <summary>
+        /// 获取或设置触发电平阈值
+        /// </summary>
+        public double TriggerLevel
+        {
+            get => _triggerLevel;
+            set => _triggerLevel = value;
+        }
+
+        #endregion
+
+        #region 构造函数
+
+        /// <summary>
+        /// 初始化触发采集管理器
+        /// </summary>
+        /// <param name="preTriggerPoints">预触发点数（默认100）</param>
+        /// <param name="totalDisplayPoints">总显示窗口点数（默认500）</param>
+        /// <param name="triggerLevel">触发电平阈值（默认5.0）</param>
+        public TriggeredAcquisitionManager(int preTriggerPoints = 100,
+                                          int totalDisplayPoints = 500,
+                                          double triggerLevel = 5.0)
+        {
+            _preTriggerPoints = preTriggerPoints;
+            _totalDisplayPoints = totalDisplayPoints;
+            _triggerLevel = triggerLevel;
+
+            // 初始化缓冲区，预分配容量以提高性能
+            _preTriggerBuffer = new Queue<double>(_preTriggerPoints + 1);
+            _postTriggerBuffer = new List<double>(_totalDisplayPoints);
+        }
+
+        #endregion
+
+        #region 公共方法
+
+        /// <summary>
+        /// 处理批量采样数据
+        /// </summary>
+        /// <param name="samples">采样数据数组</param>
+        public void ProcessDataBatch(double[] samples)
+        {
+            if (samples == null || samples.Length == 0)
+                return;
+
+            // 逐样本处理，确保每个样本都经过状态机逻辑
+            for (int i = 0; i < samples.Length; i++)
+            {
+                double sample = samples[i];
+                ProcessSingleSample(sample);
+            }
+        }
+
+        /// <summary>
+        /// 通知批次处理结束（用于Holdoff状态计数）
+        /// </summary>
+        public void NotifyBatchEnd()
+        {
+            if (_state == AcquisitionState.Holdoff)
+            {
+                _holdoffCounter--;
+                if (_holdoffCounter <= 0)
+                {
+                    // Holdoff结束，恢复等待触发状态
+                    _state = AcquisitionState.WaitingForTrigger;
+                    _preTriggerBuffer.Clear();
+                    _lastSample = double.MinValue;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 重置采集管理器到初始状态
+        /// </summary>
+        public void Reset()
+        {
+            _state = AcquisitionState.WaitingForTrigger;
+            _preTriggerBuffer.Clear();
+            _postTriggerBuffer.Clear();
+            _lastSample = double.MinValue;
+            _holdoffCounter = 0;
+        }
+
+        #endregion
+
+        #region 私有方法
+
+        /// <summary>
+        /// 处理单个采样点，根据当前状态分发到对应的处理逻辑
+        /// </summary>
+        /// <param name="sample">当前采样值</param>
+        private void ProcessSingleSample(double sample)
+        {
+            switch (_state)
+            {
+                case AcquisitionState.WaitingForTrigger:
+                    HandleWaitingState(sample);
+                    break;
+                case AcquisitionState.CapturingPostTrigger:
+                    HandleCapturingState(sample);
+                    break;
+                case AcquisitionState.Holdoff:
+                    UpdatePreTriggerBuffer(sample);  // Holdoff期间仍更新预触发缓冲
+                    break;
+            }
+            _lastSample = sample;  // 保存当前样本供下次边缘检测使用
+        }
+
+        /// <summary>
+        /// 处理等待触发状态：检测上升沿，触发后切换到捕获状态
+        /// </summary>
+        /// <param name="sample">当前采样值</param>
+        private void HandleWaitingState(double sample)
+        {
+            // 持续更新预触发缓冲区
+            UpdatePreTriggerBuffer(sample);
+
+            // 上升沿检测：上一个样本 < 阈值 && 当前样本 >= 阈值
+            if (_lastSample < _triggerLevel && sample >= _triggerLevel)
+            {
+                // 触发条件满足，切换到捕获状态
+                _state = AcquisitionState.CapturingPostTrigger;
+                _postTriggerBuffer.Clear();
+                _postTriggerBuffer.Add(sample);  // 触发点加入后触发缓冲区
+
+                // 计算还需采集的后触发点数
+                _postTriggerNeeded = _totalDisplayPoints - _preTriggerBuffer.Count - 1;
+
+                // 如果预触发缓冲已满，立即完成采集
+                if (_postTriggerNeeded <= 0)
+                    CompleteCapture();
+            }
+        }
+
+        /// <summary>
+        /// 处理捕获后触发状态：收集后触发数据，完成后触发采集完成事件
+        /// </summary>
+        /// <param name="sample">当前采样值</param>
+        private void HandleCapturingState(double sample)
+        {
+            _postTriggerBuffer.Add(sample);
+            _postTriggerNeeded--;
+            UpdatePreTriggerBuffer(sample);  // 继续更新预触发缓冲
+
+            // 后触发数据采集完成
+            if (_postTriggerNeeded <= 0)
+                CompleteCapture();
+        }
+
+        /// <summary>
+        /// 更新预触发环形缓冲区
+        /// </summary>
+        /// <param name="sample">当前采样值</param>
+        private void UpdatePreTriggerBuffer(double sample)
+        {
+            _preTriggerBuffer.Enqueue(sample);
+            // 保持缓冲区大小恒定，超出时自动丢弃最旧的数据
+            if (_preTriggerBuffer.Count > _preTriggerPoints)
+                _preTriggerBuffer.Dequeue();
+        }
+
+        /// <summary>
+        /// 完成采集：拼接预触发和后触发数据，触发采集完成事件，进入Holdoff状态
+        /// </summary>
+        private void CompleteCapture()
+        {
+            // 创建完整的显示窗口
+            double[] capturedWindow = new double[_totalDisplayPoints];
+            int index = 0;
+
+            // 1. 复制预触发数据
+            foreach (var val in _preTriggerBuffer)
+                capturedWindow[index++] = val;
+
+            // 2. 复制后触发数据（不超过总点数）
+            foreach (var val in _postTriggerBuffer)
+            {
+                if (index < _totalDisplayPoints)
+                    capturedWindow[index++] = val;
+                else
+                    break;
+            }
+
+            // 3. 不足部分填0
+            while (index < _totalDisplayPoints)
+                capturedWindow[index++] = 0;
+
+            // 触发事件通知外部
+            CaptureCompleted?.Invoke(capturedWindow);
+
+            // 进入Holdoff状态防止重复触发
+            _state = AcquisitionState.Holdoff;
+            _holdoffCounter = HOLDOFF_BATCHES;
+        }
+        #endregion
+    }
+
     public partial class MainWindow : Window
-    {   
+    {
         private MainWindowViewModel viewModel;
         private bool _forwardPressed;
         private bool _reversePressed;
 
         private SpeechRecognitionEngine _recognizer;
-        private SpeechSynthesizer _synthesizer;  // 语音合成引擎
-        private bool _isAwake = false;  // 唤醒状态标志
+        private SpeechSynthesizer _synthesizer;
+        private bool _isAwake = false;
 
         #region 示波器显示相关字段
-        
-        /// <summary>
-        /// 示波器刷新定时器 - 20Hz刷新率（50ms间隔）
-        /// </summary>
+
         private System.Windows.Threading.DispatcherTimer _oscilloscopeTimer;
-        
-        /// <summary>
-        /// 示波器是否正在运行
-        /// </summary>
         private bool _isOscilloscopeRunning = false;
-        
+
         /// <summary>
-        /// 数据缓冲区 - 存储所有历史数据用于停止后查看
+        /// 历史数据累积缓冲区（不清空，用于停止后滑动查看）
         /// </summary>
-        private readonly Dictionary<int, List<double>> _dataBuffers = new()
+        private readonly Dictionary<int, List<double>> _historyBuffers = new()
         {
             { 1, new List<double>() },
             { 2, new List<double>() },
             { 3, new List<double>() },
             { 4, new List<double>() }
         };
-        
+
         /// <summary>
-        /// 当前显示的数据起始索引（用于停止后滑动查看）
-        /// </summary>
-        private int _displayStartIndex = 0;
-        
-        /// <summary>
-        /// 每批次采集的数据点数
-        /// </summary>
-        private const int BATCH_POINT_COUNT = 500;
-        
-        /// <summary>
-        /// 显示窗口大小
-        /// </summary>
-        private const int DISPLAY_WINDOW_SIZE = 500;
-        
-        /// <summary>
-        /// 最大缓冲区大小（防止内存无限增长）
-        /// </summary>
-        private const int MAX_BUFFER_SIZE = 10000;
-        
-        /// <summary>
-        /// 总共接收的数据点数（用于X轴无限增长）
-        /// </summary>
-        private long _totalPointCount = 0;
-        
-        /// <summary>
-        /// 缓冲区起始点的全局索引（当缓冲区滚动时更新）
+        /// 缓冲区全局起始索引（用于X轴连续增长）
         /// </summary>
         private long _bufferStartIndex = 0;
-        
+
         /// <summary>
-        /// 触发水平值（上升沿触发电平）
+        /// 最大历史缓冲区大小（防止内存溢出）
         /// </summary>
-        private double _triggerLevel = 0;
-        
-        /// <summary>
-        /// 是否已触发（用于上升沿检测）
-        /// </summary>
-        private bool _hasTriggered = false;
-        
-        /// <summary>
-        /// 上一次的数据值（用于上升沿检测）
-        /// </summary>
-        private double _lastTriggerValue = double.MinValue;
-        
-        /// <summary>
-        /// 触发后的预触发数据缓冲区
-        /// </summary>
-        private List<double> _preTriggerBuffer = new List<double>();
-        
-        /// <summary>
-        /// 预触发点数
-        /// </summary>
+        private const int MAX_BUFFER_SIZE = 50000;
+
+        private readonly Dictionary<int, TriggeredAcquisitionManager> _triggerManagers = new();
+
+        private const int BATCH_POINT_COUNT = 500;
+        private const int DISPLAY_WINDOW_SIZE = 500;
         private const int PRE_TRIGGER_POINTS = 100;
-        
+        private const double DEFAULT_TRIGGER_LEVEL = 5.0;
+
         #endregion
-        
 
         public MainWindow()
         {
             InitializeComponent();
 
-            //语音识别功能
             Loaded += MainWindow_Loaded;
 
             var app = (App)Application.Current;
@@ -124,31 +380,54 @@ namespace WpfApp1
 
             Loaded += MainWindow_AutoOpenSerial;
 
-            // 初始化示波器显示系统（新增）
             InitializeOscilloscope();
-
-
         }
 
         #region 示波器显示方法
 
-        /// <summary>
-        /// 初始化示波器显示系统
-        /// </summary>
         private void InitializeOscilloscope()
         {
-            // 初始化ScottPlot控件显示设置
             InitializeScottPlot();
-            
-            // 创建示波器刷新定时器
+
+            for (int ch = 1; ch <= 4; ch++)
+            {
+                var manager = new TriggeredAcquisitionManager(
+                    PRE_TRIGGER_POINTS,
+                    DISPLAY_WINDOW_SIZE,
+                    DEFAULT_TRIGGER_LEVEL);
+
+                int channel = ch;
+                manager.CaptureCompleted += (capturedData) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        // 将捕获到的完整窗口追加到历史缓冲区（不清空）
+                        var buffer = _historyBuffers[channel];
+                        buffer.AddRange(capturedData);
+
+                        // 限制缓冲区大小
+                        if (buffer.Count > MAX_BUFFER_SIZE)
+                        {
+                            int removeCount = buffer.Count - MAX_BUFFER_SIZE;
+                            buffer.RemoveRange(0, removeCount);
+                            _bufferStartIndex += removeCount;
+                        }
+
+                        if (_isOscilloscopeRunning)
+                        {
+                            RefreshOscilloscopeDisplay();
+                        }
+                    });
+                };
+
+                _triggerManagers[ch] = manager;
+            }
+
             _oscilloscopeTimer = new System.Windows.Threading.DispatcherTimer();
-            _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(15);
+            _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(100);
             _oscilloscopeTimer.Tick += OscilloscopeTimer_Tick;
         }
 
-        /// <summary>
-        /// 初始化ScottPlot控件显示设置
-        /// </summary>
         private void InitializeScottPlot()
         {
             if (MainPlot != null)
@@ -164,178 +443,112 @@ namespace WpfApp1
             }
         }
 
-        /// <summary>
-        /// 示波器定时器触发事件
-        /// </summary>
         private void OscilloscopeTimer_Tick(object? sender, EventArgs e)
         {
             if (!_isOscilloscopeRunning) return;
-            
+
+            var vm = DataContext as MainWindowViewModel;
+            if (vm == null) return;
+
+            for (int channel = 1; channel <= 4; channel++)
+            {
+                if (IsChannelSelected(vm, channel))
+                {
+                    // 获取最新数据
+                    var data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
+                    //double[] data = GenerateTestData(channel, BATCH_POINT_COUNT);
+                    _triggerManagers[channel].ProcessDataBatch(data);
+                }
+            }
+
+            foreach (var manager in _triggerManagers.Values)
+                manager.NotifyBatchEnd();
+
             RefreshOscilloscopeDisplay();
         }
 
-        /// <summary>
-        /// 刷新示波器显示
-        /// 获取所有选中通道的最新数据，并更新ScottPlot显示
-        /// </summary>
         private void RefreshOscilloscopeDisplay()
         {
             if (MainPlot == null) return;
-            
-            var viewModel = DataContext as MainWindowViewModel;
-            if (viewModel == null) return;
-
-            // 获取所有选中通道的数据
-            for (int channel = 1; channel <= 4; channel++)
-            {
-                if (IsChannelSelected(viewModel, channel))
-                {
-                    // 获取最新数据
-                    //var data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
-
-                    // 使用测试数据
-                    var data = GenerateTestDataWithTrigger(channel, BATCH_POINT_COUNT);
-
-                    // 将数据添加到缓冲区
-                    AddDataToBuffer(channel, data);
-                }
-            }
-            
-            // 更新显示
-            UpdatePlotDisplay();
-        }
-
-        /// <summary>
-        /// 将数据添加到缓冲区
-        /// </summary>
-        private void AddDataToBuffer(int channel, double[] data)
-        {
-            var buffer = _dataBuffers[channel];
-            buffer.AddRange(data);
-            
-            // 更新全局数据计数
-            _totalPointCount += data.Length;
-            
-            // 限制缓冲区大小
-            if (buffer.Count > MAX_BUFFER_SIZE)
-            {
-                int removeCount = buffer.Count - MAX_BUFFER_SIZE;
-                buffer.RemoveRange(0, removeCount);
-                
-                // 更新缓冲区起始索引（X轴无限增长）
-                _bufferStartIndex += removeCount;
-            }
-        }
-        /// <summary>
-        /// 更新图表显示
-        /// </summary>
-        private void UpdatePlotDisplay()
-        {
-            if (MainPlot == null) return;
-            
-            var viewModel = DataContext as MainWindowViewModel;
-            if (viewModel == null) return;
+            var vm = DataContext as MainWindowViewModel;
+            if (vm == null) return;
 
             MainPlot.Plot.Clear();
-            
-            // 收集所有显示的数据点用于计算Y轴范围
-            List<double> allDataPoints = new List<double>();
-            
-            // 为每个选中的通道绘制数据
+            List<double> allYValues = new List<double>();
+
             for (int channel = 1; channel <= 4; channel++)
             {
-                if (IsChannelSelected(viewModel, channel))
+                if (IsChannelSelected(vm, channel))
                 {
-                    var buffer = _dataBuffers[channel];
+                    var buffer = _historyBuffers[channel];
                     if (buffer.Count == 0) continue;
-                    
-                    // 绘制完整的历史数据（使用全局索引，实现X轴无限增长）
+
                     double[] xData = new double[buffer.Count];
-                    double[] yData = new double[buffer.Count];
-                    
+                    double[] yData = buffer.ToArray();
                     for (int i = 0; i < buffer.Count; i++)
-                    {
-                        xData[i] = _bufferStartIndex + i; // 使用全局索引
-                        yData[i] = buffer[i];
-                        allDataPoints.Add(buffer[i]);
-                    }
-                    
+                        xData[i] = _bufferStartIndex + i;   // 使用全局索引
+
                     var scatter = MainPlot.Plot.Add.Scatter(xData, yData);
                     scatter.Color = GetChannelColor(channel);
                     scatter.LineWidth = 1;
                     scatter.MarkerSize = 0;
+
+                    allYValues.AddRange(yData);
                 }
             }
-            
-            // 计算并设置Y轴范围（添加10%的空白区域）
-            if (allDataPoints.Count > 0)
+
+            if (allYValues.Count > 0)
             {
-                double yMin = allDataPoints.Min();
-                double yMax = allDataPoints.Max();
+                double yMin = allYValues.Min();
+                double yMax = allYValues.Max();
                 double yRange = yMax - yMin;
-                double margin = yRange * 0.1; // 10%的空白区域
-                
-                // 处理数据范围很小的情况
-                if (yRange < 0.1)
-                {
-                    margin = 1.0; // 最小空白区域
-                }
-                
+                double margin = Math.Max(yRange * 0.1, 1.0);
                 MainPlot.Plot.Axes.SetLimitsY(yMin - margin, yMax + margin);
             }
-            
-            // 如果正在运行，自动跟随最新数据
+
+            // 运行状态：X轴跟随最新数据；停止状态：不自动设置范围，保留用户交互视图
             if (_isOscilloscopeRunning)
             {
-                var firstBuffer = _dataBuffers.Values.FirstOrDefault(b => b.Count > 0);
+                var firstBuffer = _historyBuffers.Values.FirstOrDefault(b => b.Count > 0);
                 if (firstBuffer != null)
                 {
-                    // 使用全局索引设置X轴范围（实现X轴无限增长）
                     long endIndex = _bufferStartIndex + firstBuffer.Count;
                     long startIndex = Math.Max(_bufferStartIndex, endIndex - DISPLAY_WINDOW_SIZE);
                     MainPlot.Plot.Axes.SetLimitsX(startIndex, endIndex);
                 }
             }
-            else
-            {
-                // 停止模式下，保持当前视图不变，允许用户自由浏览
-                // 不设置X轴范围，让ScottPlot的交互功能生效
-            }
-            
+            // 停止时完全不设置X轴范围，让ScottPlot保持当前视图
+
             MainPlot.Refresh();
         }
 
-        /// <summary>
-        /// 生成带上升沿触发的测试数据
-        /// </summary>
-        private double[] GenerateTestDataWithTrigger(int channel, int count)
+
+        // 所有通道共用一个随机数生成器（固定种子，确保噪声模式一致）
+        private readonly Random _sharedRandom = new Random(12345);
+
+        private double[] GenerateTestData(int channel, int count)
         {
             double[] data = new double[count];
-            Random random = new Random(channel * 123 + DateTime.Now.Millisecond);
-            
-            // 基础正弦波
-            double phase = channel * Math.PI / 2;
-            double frequency = 0.05 + channel * 0.02;
-            
+            // 所有通道使用相同的波形参数
+            double frequency = 0.01;     // 统一频率
+            double dutyCycle = 0.5;      // 占空比
+            double amplitude = 10;       // 幅度
+            double phase = 0;            // 无相位偏移
+
             for (int i = 0; i < count; i++)
             {
-                // 生成基础信号
-                double value = Math.Sin(i * frequency + phase) * 10;
+                // 计算当前点在周期中的位置 [0, 1)
+                double t = (i * frequency) % 1;
                 
-                // 添加一些噪声
-                value += random.NextDouble() * 2 - 1;
-                
-           
-                
+                // 生成方波：t < dutyCycle 时为高电平，否则为低电平
+                double value = t < dutyCycle ? amplitude : -amplitude;
+
+                value += _sharedRandom.NextDouble() * 0.5 - 0.25;
                 data[i] = value;
             }
-            
             return data;
         }
 
-        /// <summary>
-        /// 检查通道是否被选中
-        /// </summary>
         private bool IsChannelSelected(MainWindowViewModel viewModel, int channel)
         {
             return channel switch
@@ -348,9 +561,6 @@ namespace WpfApp1
             };
         }
 
-        /// <summary>
-        /// 获取通道颜色
-        /// </summary>
         private ScottPlot.Color GetChannelColor(int channel)
         {
             return channel switch
@@ -363,224 +573,129 @@ namespace WpfApp1
             };
         }
 
-        /// <summary>
-        /// 开始示波器
-        /// </summary>
         private void StartOscilloscope()
         {
             _isOscilloscopeRunning = true;
-            
-            // 不需要清空缓冲区，保留历史数据，继续添加新数据
-            
+
+            foreach (var manager in _triggerManagers.Values)
+                manager.Reset();
+
             _oscilloscopeTimer.Start();
         }
 
-        /// <summary>
-        /// 停止示波器
-        /// </summary>
         private void StopOscilloscope()
         {
             _isOscilloscopeRunning = false;
             _oscilloscopeTimer.Stop();
-            
-            // 设置显示索引为最新数据位置，方便查看历史
-            var firstBuffer = _dataBuffers.Values.FirstOrDefault(b => b.Count > 0);
-            if (firstBuffer != null)
-            {
-                _displayStartIndex = Math.Max(0, firstBuffer.Count - DISPLAY_WINDOW_SIZE);
-            }
-        }
-
-        /// <summary>
-        /// 向左滑动查看历史数据
-        /// </summary>
-        private void ScrollLeft()
-        {
-            if (_isOscilloscopeRunning) return;
-            
-            _displayStartIndex = Math.Max(0, _displayStartIndex - DISPLAY_WINDOW_SIZE / 2);
-            UpdatePlotDisplay();
-        }
-
-        /// <summary>
-        /// 向右滑动查看历史数据
-        /// </summary>
-        private void ScrollRight()
-        {
-            if (_isOscilloscopeRunning) return;
-            
-            var firstBuffer = _dataBuffers.Values.FirstOrDefault(b => b.Count > 0);
-            if (firstBuffer != null)
-            {
-                int maxStartIndex = Math.Max(0, firstBuffer.Count - DISPLAY_WINDOW_SIZE);
-                _displayStartIndex = Math.Min(maxStartIndex, _displayStartIndex + DISPLAY_WINDOW_SIZE / 2);
-            }
-            UpdatePlotDisplay();
+            // 停止时不修改缓冲区，不重置视图，用户可自由滑动
         }
 
         #endregion
 
         private void MainWindow_AutoOpenSerial(object sender, RoutedEventArgs e)
         {
-            // 仅首次加载自动弹出串口窗口，避免窗口重新激活时重复弹出
             Loaded -= MainWindow_AutoOpenSerial;
             viewModel.OpenSerialPortCommand.Execute(null);
         }
-        /// <summary>
-        /// 鼠标双击
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+
         private void SetpointTextBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             if (sender is TextBox textBox)
             {
-                // 双击进入可编辑态
                 textBox.IsReadOnly = false;
                 textBox.Focus();
                 textBox.SelectAll();
             }
         }
-        /// <summary>
-        /// 按下回车后
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+
         private async void SetpointTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key != Key.Enter)
-                return;
-            if (sender is not TextBox textBox)
-                return;
+            if (e.Key != Key.Enter) return;
+            if (sender is not TextBox textBox) return;
 
-            // 回车时手动推送绑定源，再触发设备写入
             textBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
             await viewModel.CommitCurrentSetpointAsync();
             textBox.IsReadOnly = true;
             Keyboard.ClearFocus();
             e.Handled = true;
         }
-        /// <summary>
-        /// 失去焦点后
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+
         private void SetpointTextBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            // 离开焦点后恢复只读，防止误触继续编辑
             if (sender is TextBox textBox)
                 textBox.IsReadOnly = true;
         }
 
-        /// <summary>
-        /// 参数文本框双击事件：进入可编辑状态
-        /// </summary>
         private void ParameterTextBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             if (sender is TextBox textBox)
             {
-                // 双击进入可编辑态
                 textBox.IsReadOnly = false;
                 textBox.Focus();
                 textBox.SelectAll();
             }
         }
 
-        /// <summary>
-        /// 参数文本框按键事件：回车提交
-        /// </summary>
         private async void ParameterTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key != Key.Enter)
-                return;
-            if (sender is not TextBox textBox)
-                return;
-
-            // 回车时提交参数值
+            if (e.Key != Key.Enter) return;
+            if (sender is not TextBox textBox) return;
             await CommitParameterValueAsync(textBox);
         }
 
-        /// <summary>
-        /// 参数文本框失去焦点事件：恢复只读状态
-        /// </summary>
         private async void ParameterTextBox_LostFocus(object sender, RoutedEventArgs e)
         {
             if (sender is TextBox textBox)
             {
-                // 失去焦点时提交参数值并恢复只读
                 await CommitParameterValueAsync(textBox);
                 textBox.IsReadOnly = true;
             }
         }
 
-        /// <summary>
-        /// 提交参数值到设备
-        /// </summary>
         private async Task CommitParameterValueAsync(TextBox textBox)
         {
             string parameterName = textBox.Tag?.ToString() ?? string.Empty;
             string value = textBox.Text?.Trim() ?? string.Empty;
-
             if (string.IsNullOrEmpty(parameterName) || string.IsNullOrEmpty(value))
                 return;
 
-            // 手动更新绑定源
             textBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
-
-            // 调用ViewModel方法发送参数
             await viewModel.CommitParameterValueAsync(parameterName, value);
         }
-        /// <summary>
-        /// 左键按下
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+
         private async void ForwardJog_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (viewModel.IsEnableLatched)
-                return;
-            // 长按模式按下：触发“给定 + 使能开”
+            if (viewModel.IsEnableLatched) return;
             _forwardPressed = true;
             await viewModel.StartJogAsync(true);
             e.Handled = true;
         }
-        /// <summary>
-        /// 左键松开
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+
         private async void ForwardJog_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (!_forwardPressed)
-                return;
-            // 长按模式松开：触发“使能关”
+            if (!_forwardPressed) return;
             _forwardPressed = false;
             await viewModel.StopJogAsync();
             e.Handled = true;
         }
+
         private async void ForwardJog_MouseLeave(object sender, MouseEventArgs e)
         {
-            if (!_forwardPressed)
-                return;
-            if (e.LeftButton == MouseButtonState.Pressed)
-                return;
+            if (!_forwardPressed) return;
+            if (e.LeftButton == MouseButtonState.Pressed) return;
             _forwardPressed = false;
             await viewModel.StopJogAsync();
         }
 
         private async void ForwardJog_Click(object sender, RoutedEventArgs e)
         {
-            if (!viewModel.IsEnableLatched)
-                return;
-            // 单点模式点击：一次性触发，不需要松开关断
+            if (!viewModel.IsEnableLatched) return;
             await viewModel.JogSingleAsync(true);
         }
 
         private async void ReverseJog_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (viewModel.IsEnableLatched)
-                return;
-            // 长按模式按下：反向点动（给定发送负值）
+            if (viewModel.IsEnableLatched) return;
             _reversePressed = true;
             await viewModel.StartJogAsync(false);
             e.Handled = true;
@@ -588,9 +703,7 @@ namespace WpfApp1
 
         private async void ReverseJog_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (!_reversePressed)
-                return;
-            // 长按模式松开：触发“使能关”
+            if (!_reversePressed) return;
             _reversePressed = false;
             await viewModel.StopJogAsync();
             e.Handled = true;
@@ -598,101 +711,59 @@ namespace WpfApp1
 
         private async void ReverseJog_MouseLeave(object sender, MouseEventArgs e)
         {
-            if (!_reversePressed)
-                return;
-            if (e.LeftButton == MouseButtonState.Pressed)
-                return;
+            if (!_reversePressed) return;
+            if (e.LeftButton == MouseButtonState.Pressed) return;
             _reversePressed = false;
             await viewModel.StopJogAsync();
         }
 
         private async void ReverseJog_Click(object sender, RoutedEventArgs e)
         {
-            if (!viewModel.IsEnableLatched)
-                return;
-            // 单点模式点击：一次性触发，不需要松开关断
+            if (!viewModel.IsEnableLatched) return;
             await viewModel.JogSingleAsync(false);
         }
 
-        /// <summary>
-        /// 语音识别
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            //创建识别引擎
-            _recognizer=new SpeechRecognitionEngine();
-            //创建语音合成引擎
+            _recognizer = new SpeechRecognitionEngine();
             _synthesizer = new SpeechSynthesizer();
 
-            //定义唤醒词语法
             Choices wakeUpCommands = new Choices();
-            wakeUpCommands.Add("你好语音助手","打开串口","打开参数表","关闭串口","关闭参数表");
+            wakeUpCommands.Add("你好语音助手", "打开串口", "打开参数表", "关闭串口", "关闭参数表");
 
             GrammarBuilder wakeUpGb = new GrammarBuilder(wakeUpCommands);
             Grammar wakeUpGrammar = new Grammar(wakeUpGb);
-              
-            //加载唤醒词语法
+
             _recognizer.LoadGrammar(wakeUpGrammar);
-            //绑定识别成功事件
-            _recognizer.SpeechRecognized += _recognizer_SpeechRecognized; 
-            //设置输入设备并开始异步识别
+            _recognizer.SpeechRecognized += _recognizer_SpeechRecognized;
             _recognizer.SetInputToDefaultAudioDevice();
             _recognizer.RecognizeAsync(RecognizeMode.Multiple);
-
         }
 
-        /// <summary>
-        /// 判断语音操作
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void _recognizer_SpeechRecognized(object? sender, SpeechRecognizedEventArgs e)
         {
             string command = e.Result.Text;
-            float confidence=e.Result.Confidence;
-
+            float confidence = e.Result.Confidence;
             if (confidence < 0.7) return;
-            
+
             Dispatcher.Invoke(() =>
             {
-                // 检查是否是唤醒词
                 if (command == "语音助手")
                 {
                     _isAwake = true;
-                    // 使用语音播报代替对话框
                     _synthesizer.SpeakAsync("我在");
-                    
-                    // 5秒后自动退出唤醒状态
-                    Task.Delay(5000).ContinueWith(_ => 
-                    {
-                        _isAwake = false;
-                    });
+                    Task.Delay(5000).ContinueWith(_ => _isAwake = false);
                     return;
                 }
-                
-                // 只有在唤醒状态下才执行其他指令
-                if (!_isAwake)
-                    return;
-                
+                if (!_isAwake) return;
+
                 switch (command)
                 {
-                    case "打开串口":
-                        viewModel.OpenSerialPort();
-                        break;
-                    case "关闭串口":
-                        CloseSerialPortWindow();
-                        break;
-                    case "打开参数表":
-                        viewModel.OpenExcel();
-                        break;
-                    case "关闭参数表":
-                        CloseExcelWindow();
-                        break;
-                    default: break;
+                    case "打开串口": viewModel.OpenSerialPort(); break;
+                    case "关闭串口": CloseSerialPortWindow(); break;
+                    case "打开参数表": viewModel.OpenExcel(); break;
+                    case "关闭参数表": CloseExcelWindow(); break;
                 }
-
             });
         }
 
@@ -704,51 +775,29 @@ namespace WpfApp1
             base.OnClosed(e);
         }
 
-        /// <summary>
-        /// 关闭Excel窗口
-        /// </summary>
         private void CloseExcelWindow()
         {
-            // 查找当前打开的Excel窗口并关闭
             foreach (Window window in Application.Current.Windows)
-            {
                 if (window is WpfApp1.Views.Excel)
-                {
                     window.Close();
-                    break;
-                }
-            }
         }
 
-        /// <summary>
-        /// 关闭串口配置窗口
-        /// </summary>
         private void CloseSerialPortWindow()
         {
-            // 查找当前打开的串口配置窗口并关闭
             foreach (Window window in Application.Current.Windows)
-            {
                 if (window is WpfApp1.Views.Serialport)
-                {
                     window.Close();
-                    break;
-                }
-            }
         }
-        /// <summary>
-        /// 开始/停止示波器按钮点击事件
-        /// </summary>
+
         private void Button_Click(object sender, RoutedEventArgs e)
         {
             if (_isOscilloscopeRunning)
             {
-                // 停止示波器
                 StopOscilloscope();
                 ((Button)sender).Content = "开始";
             }
             else
             {
-                // 开始示波器
                 StartOscilloscope();
                 ((Button)sender).Content = "停止";
             }

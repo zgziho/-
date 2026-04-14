@@ -264,7 +264,7 @@ namespace WpfApp1
                     int availablePoints = Math.Min(count, _count);
                     
                     var result = new double[availablePoints];
-                    Debug.WriteLine($"{availablePoints}");
+                    Debug.WriteLine($"从{readIndex}开始读{count} 剩余总数{_count}");
                     for (int i = 0; i < availablePoints; i++)
                     {
                         result[i] = _buffer[readIndex];
@@ -594,15 +594,6 @@ namespace WpfApp1
         {
             try
             {
-                //// 测试模式：生成模拟报文（后期删除方便）
-                //#if DEBUG
-                //if (payload == null || payload.Length == 0)
-                //{
-                //    // 生成模拟测试数据
-                //    payload = GenerateTestPayload();
-                //}
-                //#endif
-
                 if (payload == null || payload.Length == 0)
                     return;
 
@@ -1704,51 +1695,7 @@ namespace WpfApp1
             CleanupModbusReadThread();
         }
 
-        #region 示波器数据处理方法
 
-        /// <summary>
-        /// 生成模拟测试报文（仅DEBUG模式使用，后期删除方便）
-        /// 生成正弦波数据，用于测试示波器显示功能
-        /// </summary>
-        /// <returns>模拟报文数据</returns>
-        #if DEBUG
-        private byte[] GenerateTestPayload()
-        {
-            try
-            {
-                // 随机选择一个通道 (1-4)
-                Random rand = new Random();
-                int channel = rand.Next(1, 5);
-                byte channelByte = (byte)(0x30 + channel);
-                
-                // 生成正弦波数据（10个数据点）
-                var payload = new List<byte> { channelByte, 20 }; // 通道标识 + 数据长度
-                
-                // 生成正弦波数据点
-                double time = DateTime.Now.Millisecond / 1000.0 * 2 * Math.PI;
-                for (int i = 0; i < 10; i++)
-                {
-                    double value = Math.Sin(time + i * 0.2) * 10000 + 10000; // 正弦波，范围0-20000
-                    int intValue = (int)value;
-                    
-                    // 转换为2字节（高字节在前，低字节在后）
-                    byte hi = (byte)((intValue >> 8) & 0xFF);
-                    byte lo = (byte)(intValue & 0xFF);
-                    
-                    payload.Add(hi);
-                    payload.Add(lo);
-                }
-                
-                Debug.WriteLine($"[Test] 生成模拟数据: 通道{channel}, 数据点{10}");
-                return payload.ToArray();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[Test] 生成模拟数据失败: {ex.Message}");
-                return new byte[] { 0x31, 0 }; // 返回空数据
-            }
-        }
-        #endif
 
         /// <summary>
         /// 处理CAN实时数据帧，提取示波器数据
@@ -1825,7 +1772,6 @@ namespace WpfApp1
             }
         }
 
-        #endregion
     }
 
     /// <summary>
