@@ -188,8 +188,8 @@ namespace WpfApp1
                 {
                     // Holdoff结束，恢复等待触发状态
                     _state = AcquisitionState.WaitingForTrigger;
-                    _preTriggerBuffer.Clear();
-                    _lastSample = double.MinValue;
+                    // _preTriggerBuffer.Clear();
+                    //_lastSample=double.MinValue;  
                 }
             }
         }
@@ -248,8 +248,10 @@ namespace WpfApp1
                 _postTriggerBuffer.Clear();
                 _postTriggerBuffer.Add(sample);  // 触发点加入后触发缓冲区
 
-                // 计算还需采集的后触发点数
-                _postTriggerNeeded = _totalDisplayPoints - _preTriggerBuffer.Count - 1;
+                //_postTriggerNeeded = _totalDisplayPoints - _preTriggerBuffer.Count - 1;
+
+                // 计算还需采集的后触发点数，确保至少采集一定数量
+                _postTriggerNeeded = Math.Max(_totalDisplayPoints - _preTriggerBuffer.Count - 1, _preTriggerPoints);
 
                 // 如果预触发缓冲已满，立即完成采集
                 if (_postTriggerNeeded <= 0)
@@ -265,6 +267,7 @@ namespace WpfApp1
         {
             _postTriggerBuffer.Add(sample);
             _postTriggerNeeded--;
+
             UpdatePreTriggerBuffer(sample);  // 继续更新预触发缓冲
 
             // 后触发数据采集完成
@@ -358,10 +361,16 @@ namespace WpfApp1
 
         private readonly Dictionary<int, TriggeredAcquisitionManager> _triggerManagers = new();
 
-        private const int BATCH_POINT_COUNT = 500;
-        private const int DISPLAY_WINDOW_SIZE = 500;
-        private const int PRE_TRIGGER_POINTS = 100;
+        private const int BATCH_POINT_COUNT = 300;
+        private const int DISPLAY_WINDOW_SIZE = 300;
+        private const int PRE_TRIGGER_POINTS = 50;
         private const double DEFAULT_TRIGGER_LEVEL = 5.0;
+
+        #region 测试数据生成器字段
+        private System.Windows.Threading.DispatcherTimer? _testDataTimer;
+        private long _testDataSampleCounter = 0;  // 全局样本计数器
+        private readonly object _testDataLock = new object();
+        #endregion
 
         #endregion
 
@@ -424,8 +433,15 @@ namespace WpfApp1
             }
 
             _oscilloscopeTimer = new System.Windows.Threading.DispatcherTimer();
-            _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(100);
+            _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(50);
             _oscilloscopeTimer.Tick += OscilloscopeTimer_Tick;
+
+            #region 测试数据生成器 - 每毫秒生成50个数据写入环形缓冲区
+            _testDataTimer = new System.Windows.Threading.DispatcherTimer();
+            _testDataTimer.Interval = TimeSpan.FromMilliseconds(1);
+            _testDataTimer.Tick += TestDataTimer_Tick;
+            _testDataTimer.Start();
+            #endregion
         }
 
         private void InitializeScottPlot()
@@ -454,9 +470,12 @@ namespace WpfApp1
             {
                 if (IsChannelSelected(vm, channel))
                 {
-                    // 获取最新数据
-                    var data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
-                    //double[] data = GenerateTestData(channel, BATCH_POINT_COUNT);
+                    //var data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
+                    // 从环形缓冲区读取数据（测试数据由 TestDataTimer 定时写入）
+                    double[] data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
+
+
+                    if (data == null) return;
                     _triggerManagers[channel].ProcessDataBatch(data);
                 }
             }
@@ -526,28 +545,43 @@ namespace WpfApp1
         // 所有通道共用一个随机数生成器（固定种子，确保噪声模式一致）
         private readonly Random _sharedRandom = new Random(12345);
 
-        private double[] GenerateTestData(int channel, int count)
+        #region 测试数据生成器 - 每毫秒生成50个数据写入环形缓冲区
+        private void TestDataTimer_Tick(object? sender, EventArgs e)
         {
-            double[] data = new double[count];
-            // 所有通道使用相同的波形参数
-            double frequency = 0.01;     // 统一频率
-            double dutyCycle = 0.5;      // 占空比
-            double amplitude = 10;       // 幅度
-            double phase = 0;            // 无相位偏移
-
-            for (int i = 0; i < count; i++)
+            lock (_testDataLock)
             {
-                // 计算当前点在周期中的位置 [0, 1)
-                double t = (i * frequency) % 1;
-                
-                // 生成方波：t < dutyCycle 时为高电平，否则为低电平
-                double value = t < dutyCycle ? amplitude : -amplitude;
+                const int POINTS_PER_MS = 50;  // 每毫秒生成50个数据点
+                long currentCounter = _testDataSampleCounter;
 
-                value += _sharedRandom.NextDouble() * 0.5 - 0.25;
-                data[i] = value;
+                for (int channel = 1; channel <= 4; channel++)
+                {
+                    double[] data = new double[POINTS_PER_MS];
+                    double frequency = 0.008;  // 较低频率，方波更宽
+                    double amplitude = 15;      // 更大幅度，正负明显
+                    double phase = (channel - 1) * Math.PI / 4;  // 不同通道相位偏移
+
+                    for (int i = 0; i < POINTS_PER_MS; i++)
+                    {
+                        long sampleIndex = currentCounter + i;
+                        // 方波生成：正弦值>0时为高电平，否则为低电平
+                        double rawValue = Math.Sin(2 * Math.PI * sampleIndex * frequency + phase);
+                        double squareWave = rawValue > 0 ? amplitude : -amplitude;
+                        // 添加少量噪声模拟真实信号
+                        squareWave += _sharedRandom.NextDouble() * 0.3 - 0.15;
+                        data[i] = squareWave;
+                    }
+
+                    // 写入到 ViewModel 的环形缓冲区
+                    var vm = DataContext as MainWindowViewModel;
+                    vm?.WriteOscilloscopeData(channel, data);
+                }
+
+                _testDataSampleCounter += POINTS_PER_MS;
             }
-            return data;
         }
+        #endregion
+
+        
 
         private bool IsChannelSelected(MainWindowViewModel viewModel, int channel)
         {

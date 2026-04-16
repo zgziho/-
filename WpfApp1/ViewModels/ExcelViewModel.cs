@@ -601,12 +601,29 @@ namespace WpfApp1.ViewModels
         {
             double result = rawValue;
             
-            // 检查是否为int32类型，需要组合高位和低位数据
-            if (!string.IsNullOrEmpty(parsItem.ParsLX) && parsItem.ParsLX.Trim().ToLower() == "int32" && previousValue.HasValue)
+            // 检查数据类型并进行相应处理
+            string dataType = parsItem.ParsLX?.Trim().ToLower() ?? string.Empty;
+            
+            switch (dataType)
             {
-                // int32类型：将当前行（低位）和上一行（高位）组合成32位整数
-                int combinedValue = (previousValue.Value << 16) | (rawValue & 0xFFFF);
-                result = combinedValue;
+                case "int32":
+                    // int32类型：将当前行（低位）和上一行（高位）组合成32位整数
+                    if (previousValue.HasValue)
+                    {
+                        int combinedValue = (previousValue.Value << 16) | (rawValue & 0xFFFF);
+                        result = combinedValue;
+                    }
+                    break;
+                case "int16":
+                    // int16类型：将无符号16位值转换为有符号16位整数
+                    // 原始值范围：0-65535，转换为int16范围：-32768到32767
+                    result = (short)(rawValue & 0xFFFF);
+                    break;
+                case "uint16":
+                    // uint16类型：无符号16位整数，直接使用原始值
+                    // 范围：0-65535
+                    result = rawValue & 0xFFFF;
+                    break;
             }
             
             // 1. 与parsxs相乘（0-1范围内的小数）

@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using DocumentFormat.OpenXml.Office2010.Drawing;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTK.Graphics.GL;
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -164,6 +165,38 @@ namespace WpfApp1
         };
 
         /// <summary>
+        /// 所有参数的存储字典（按参数名存储）
+        /// </summary>
+        private Dictionary<string, string> _parameterValues = new()
+        {
+            // 电流环参数
+            { "Dkp", "" },
+            { "Qkp", "" },
+            { "CurKi", "" },  // 电流环Ki
+            { "TorqueBand", "" },
+            
+            // 速度环参数
+            { "SpeedKp", "" },  // 速度环Kp
+            { "SpeedKi", "" },  // 速度环Ki
+            { "Tff", "" },
+            { "SpeedBand", "" },
+            
+            // 位置环参数
+            { "PosKp", "" },  // 位置环Kp
+            { "Vff", "" },
+            { "CurrentPosition", "" },
+            
+            // VF模式参数
+            // "占空比给定"和"旋转频率"已在_setpointValues中存储
+            
+            // 变频器参数
+            { "旋转频率给定", "" },
+            { "电流比率给定", "" },
+            { "电流数字给定", "" },
+            { "电流峰值给定", "" }
+        };
+
+        /// <summary>
         /// 通道1选择
         /// </summary>
         [ObservableProperty]
@@ -229,6 +262,7 @@ namespace WpfApp1
             private int _writeIndex = 0;
             private int _count = 0;
             private readonly object _lock = new object();
+            public int Capacity { get; }
 
             public CircularBuffer(int capacity)
             {
@@ -236,16 +270,31 @@ namespace WpfApp1
                 Capacity = capacity;
             }
 
-            public int Capacity { get; }
-            public int Count => _count;
+          
 
-            public void Write(double item)
+            public void Write(double[] items)
             {
+                if (items == null || items.Length == 0) return;
+                
                 lock (_lock)
                 {
-                    _buffer[_writeIndex] = item;
-                    _writeIndex = (_writeIndex + 1) % Capacity;
-                    if (_count < Capacity) _count++;
+                    int length = items.Length;
+                    int capacity = Capacity;
+
+                    if (length <= capacity - _writeIndex)
+                    {
+                        Array.Copy(items, 0, _buffer, _writeIndex, length);
+                       
+                    }
+                    else
+                    {
+                        var count = capacity - _writeIndex;
+                        Array.Copy(items, 0, _buffer, _writeIndex, count);
+                        Array.Copy(items, count, _buffer, 0, length - count);
+                    }
+                    
+                    _writeIndex = (_writeIndex + length) % capacity;
+                    _count = Math.Min(_count + length, capacity);
                 }
             }
 
@@ -259,18 +308,18 @@ namespace WpfApp1
             {
                 lock (_lock)
                 {
-                    if (count <= 0 || _count == 0) return Array.Empty<double>();
-                    
-                    int availablePoints = Math.Min(count, _count);
-                    
-                    var result = new double[availablePoints];
                     Debug.WriteLine($"从{readIndex}开始读{count} 剩余总数{_count}");
-                    for (int i = 0; i < availablePoints; i++)
+                    if (count> _count) return Array.Empty<double>();
+
+                    var result = new double[count];
+                    
+                    for (int i = 0; i < count; i++)
                     {
                         result[i] = _buffer[readIndex];
                         readIndex = (readIndex + 1) % Capacity;
                     }
                     
+                    _count -= count;
                     return result;
                 }
             }
@@ -382,11 +431,14 @@ namespace WpfApp1
         /// </summary>
         partial void OnSelectedOptionChanged(string value)
         {
-            // 保存当前模式的给定值
+            // 保存当前模式的给定值和所有参数
             if (!string.IsNullOrEmpty(_currentSetpointConfigName))
             {
                 _setpointValues[_currentSetpointConfigName] = CurrentSetpointValue;
             }
+            
+            // 保存当前模式的所有参数值
+            SaveCurrentGroupParameters();
 
             switch (value)
             {
@@ -420,10 +472,102 @@ namespace WpfApp1
             {
                 CurrentSetpointValue = _setpointValues[_currentSetpointConfigName];
             }
+            
+            // 加载新模式的参数值
+            LoadCurrentGroupParameters();
 
             SetpointDisplayName = _currentSetpointConfigName;
         }
 
+        /// <summary>
+        /// 保存当前模式的所有参数值
+        /// </summary>
+        private void SaveCurrentGroupParameters()
+        {
+            if (SelectedGroup == null) return;
+
+            switch (SelectedGroup)
+            {
+                case GroupAViewModel groupA:
+                    _parameterValues["Dkp"] = groupA.Dkp;
+                    _parameterValues["Qkp"] = groupA.Qkp;
+                    _parameterValues["CurKi"] = groupA.Ki;
+                    _parameterValues["TorqueBand"] = groupA.TorqueBand;
+                    break;
+                case GroupBViewModel groupB:
+                    _parameterValues["SpeedKp"] = groupB.Kp;
+                    _parameterValues["SpeedKi"] = groupB.Ki;
+                    _parameterValues["Tff"] = groupB.Tff;
+                    _parameterValues["SpeedBand"] = groupB.SpeedBand;
+                    break;
+                case GroupCViewModel groupC:
+                    _parameterValues["PosKp"] = groupC.Kp;
+                    _parameterValues["Vff"] = groupC.Vff;
+                    _parameterValues["CurrentPosition"] = groupC.CurrentPosition;
+                    break;
+                case GroupDViewModel groupD:
+                    _parameterValues["DutyCycle"] = groupD.DutyCycle;
+                    break;
+                case GroupEViewModel groupE:
+                    _parameterValues["旋转频率给定"] = groupE.RotateFreq;
+                    _parameterValues["电流比率给定"] = groupE.CurrentRatio;
+                    _parameterValues["电流数字给定"] = groupE.CurrentDigitalRef;
+                    _parameterValues["电流峰值给定"] = groupE.CurrentPeak;
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 加载当前模式的所有参数值
+        /// </summary>
+        private void LoadCurrentGroupParameters()
+        {
+            if (SelectedGroup == null) return;
+
+            switch (SelectedGroup)
+            {
+                case GroupAViewModel groupA:
+                    groupA.Dkp = _parameterValues["Dkp"] ?? "";
+                    groupA.Qkp = _parameterValues["Qkp"] ?? "";
+                    groupA.Ki = _parameterValues["CurKi"] ?? "";
+                    groupA.TorqueBand = _parameterValues["TorqueBand"] ?? "";
+                    break;
+                case GroupBViewModel groupB:
+                    groupB.Kp = _parameterValues["SpeedKp"] ?? "";
+                    groupB.Ki = _parameterValues["SpeedKi"] ?? "";
+                    groupB.Tff = _parameterValues["Tff"] ?? "";
+                    groupB.SpeedBand = _parameterValues["SpeedBand"] ?? "";
+                    break;
+                case GroupCViewModel groupC:
+                    groupC.Kp = _parameterValues["PosKp"] ?? "";
+                    groupC.Vff = _parameterValues["Vff"] ?? "";
+                    groupC.CurrentPosition = _parameterValues["CurrentPosition"] ?? "";
+                    break;
+                case GroupDViewModel groupD:
+                    groupD.DutyCycle = _parameterValues["DutyCycle"] ?? "";
+                    break;
+                case GroupEViewModel groupE:
+                    groupE.RotateFreq = _parameterValues["旋转频率给定"] ?? "";
+                    groupE.CurrentRatio = _parameterValues["电流比率给定"] ?? "";
+                    groupE.CurrentDigitalRef = _parameterValues["电流数字给定"] ?? "";
+                    groupE.CurrentPeak = _parameterValues["电流峰值给定"] ?? "";
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 提交指定参数到设备
+        /// </summary>
+        /// <param name="parameterName">参数名称</param>
+        /// <param name="parameterValue">参数值</param>
+        /// <returns>操作是否成功</returns>
+        public async Task<bool> CommitParameterAsync(string parameterName, string parameterValue)
+        {
+            if (!TryGetConfig(parameterName, out var config))
+                return false;
+
+            return await WriteConfigValueAsync(config, parameterValue);
+        }
 
 
 
@@ -636,8 +780,11 @@ namespace WpfApp1
 
 
                 int channel = first - 0x30; // 1..4
+                
+                if (channel<=0||channel>4) 
+                    return;
 
-                // 处理示波器数据（新增） - 设备每2ms发送一组数据，直接存入环形缓冲区
+                // 处理示波器数据
                 ProcessOscilloscopeData(payload, channel);
             }
             
@@ -891,6 +1038,13 @@ namespace WpfApp1
 
         private async Task ExecuteHighFrequencyCanRead()
         {
+            // 如果有事务正在进行，跳过本次读取，避免截获指令响应
+            if (_otherConnectionService.TransactionInProgress)
+            {
+                Debug.WriteLine("[CanRead] 事务进行中，跳过读取");
+                return;
+            }
+            
             if (!_otherConnectionService.IsStarted)
             {
                 Debug.WriteLine("[CanRead] CAN未连接");
@@ -1696,7 +1850,7 @@ namespace WpfApp1
         }
 
 
-
+      
         /// <summary>
         /// 处理CAN实时数据帧，提取示波器数据
         /// 设备每2ms发送一组数据，此方法负责解析并存入环形缓冲区
@@ -1718,25 +1872,22 @@ namespace WpfApp1
                     int hi = payload[idx + 1];
                     int rawValue = (hi << 8) | lo;
                     double value = ConvertRawValueToDouble(rawValue);
+                    Trace.WriteLine($"[OscilloscopeData] 通道:{channel} 原始值: {rawValue} 转换值: {value}");
                     dataPoints.Add(value);
                     idx += 2;
                 }
 
-                // 批量写入环形缓冲区（高性能处理）
+                // 批量写入环形缓冲区
                 if (dataPoints.Count > 0)
                 {
-                    lock (_oscilloscopeLocks[channel])
-                    {
-                        foreach (var point in dataPoints)
-                        {
-                            _oscilloscopeBuffers[channel].Write(point);
-                        }
-                    }
+                    
+                    _oscilloscopeBuffers[channel].Write(dataPoints.ToArray());
+
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[OscilloscopeData] 通道{channel}数据处理错误: {ex.Message}");
+                Debug.WriteLine($"[OscilloscopeData] 通道:{channel}:数据处理错误: {ex.Message}");
             }
         }
 
@@ -1769,6 +1920,21 @@ namespace WpfApp1
                 var data = _oscilloscopeBuffers[channel].ReadFromIndex(ref readIndex, pointCount);
                 _readIndices[channel] = readIndex;
                 return data;
+            }
+        }
+
+        /// <summary>
+        /// 写入示波器数据到环形缓冲区（用于测试数据生成）
+        /// </summary>
+        /// <param name="channel">通道号 (1-4)</param>
+        /// <param name="data">要写入的数据</param>
+        public void WriteOscilloscopeData(int channel, double[] data)
+        {
+            if (data == null || data.Length == 0) return;
+            
+            lock (_oscilloscopeLocks[channel])
+            {
+                _oscilloscopeBuffers[channel].Write(data);
             }
         }
 

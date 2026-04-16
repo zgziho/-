@@ -258,24 +258,6 @@ public partial class OtherConnectionViewModel : ObservableObject
         HandleResult(result);
     }
 
-    /// <summary>
-    /// 处理接收到的消息
-    /// 确保在UI线程中更新消息列表，避免跨线程操作UI的问题
-    /// </summary>
-    /// <param name="messages">接收到的消息列表</param>
-    private void OnMessagesReceived(IReadOnlyList<string> messages)
-    {
-        // 检查当前线程是否为UI线程
-        if (Application.Current.Dispatcher.CheckAccess())
-        {
-            // 如果是UI线程，直接添加消息
-            AppendMessages(messages);
-            return;
-        }
-
-        // 如果不是UI线程，通过Dispatcher在UI线程中添加消息
-        Application.Current.Dispatcher.Invoke(() => AppendMessages(messages));
-    }
 
     /// <summary>
     /// 将消息添加到消息列表中

@@ -1,5 +1,6 @@
 using DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Drawing.Diagrams;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -22,10 +23,7 @@ public sealed class OtherConnectionService
     private int _pendingWriteRequests = 0;
     private int _writeCooldownMilliseconds = 10;
     private DateTime _readBlockedUntilUtc = DateTime.MinValue;
-    //private readonly object _pendingReadLock = new();
-    //private TaskCompletionSource<int[]>? _pendingReadTcs;
-    //private int _pendingReadStart;
-    //private int _pendingReadCount;
+
     
 
     /// <summary>
@@ -36,7 +34,7 @@ public sealed class OtherConnectionService
         get => _writeCooldownMilliseconds;
         set => _writeCooldownMilliseconds = value < 0 ? 0 : value;
     }
-
+ 
     /// <summary>
     /// 启动被动接收循环
     /// </summary>
@@ -47,6 +45,7 @@ public sealed class OtherConnectionService
         _passiveReceiveCts = new CancellationTokenSource();
         var token = _passiveReceiveCts.Token;
 
+        // 生产者任务：负责接收数据并存入队列
         Task.Run(() =>
         {
             try
@@ -54,7 +53,7 @@ public sealed class OtherConnectionService
                 while (!token.IsCancellationRequested)
                 {
                     // 遍历所有通道尝试接收数据
-                    for (int ch = 0; ch < ChannelCount; ch++)
+                    for (int ch = 0; ch < ChannelCount-1; ch++)
                     {
                         if (token.IsCancellationRequested)
                             break;
@@ -63,11 +62,21 @@ public sealed class OtherConnectionService
 
                         try
                         {
-                            var payload = ReceiveAnyCanResponse(ch);
-                            if (payload != null && payload.Length > 0)
+                            
+                              var  payloads = ReceiveAnyCanResponse(ch);
+                            
+                            
+                            if (payloads != null && payloads.Count > 0)
                             {
-                                StoreRawMessage($"通道{ch} 被动接收: {ConvertToHexString(payload)}");
-                                try { RealtimeFrameReceived?.Invoke(payload); } catch { }
+                                foreach (var payload in payloads)
+                                {
+                                    if (payload != null && payload.Length > 0)
+                                    {
+                                        //StoreRawMessage($"通道{ch} 被动接收: {ConvertToHexString(payload)}");
+                                        // 将数据入队，不直接触发事件，避免阻塞接收线程
+                                        _frameQueue.Enqueue(payload);
+                                    }
+                                }
                             }
                         }
                         catch
@@ -76,8 +85,7 @@ public sealed class OtherConnectionService
                         }
                     }
 
-                    // 若无数据，避免紧循环
-                    Thread.Sleep(10);
+                    
                 }
             }
             catch
@@ -85,6 +93,29 @@ public sealed class OtherConnectionService
                 // 忽略循环异常
             }
         }, token);
+
+        //消费者任务：负责从队列中取出数据并触发事件
+       _consumerTask = Task.Run(() =>
+       {
+           try
+           {
+               while (!token.IsCancellationRequested)
+               {
+                   if (_frameQueue.TryDequeue(out var payload))
+                   {
+                       try
+                       {
+                           RealtimeFrameReceived?.Invoke(payload);
+                       }
+                       catch { }
+                   }
+               }
+           }
+           catch
+           {
+
+           }
+       }, token);
     }
 
     /// <summary>
@@ -95,10 +126,18 @@ public sealed class OtherConnectionService
         try
         {
             _passiveReceiveCts?.Cancel();
+            // 等待消费者任务完成
+            _consumerTask?.Wait(1000);
             _passiveReceiveCts?.Dispose();
         }
         catch { }
-        finally { _passiveReceiveCts = null; }
+        finally 
+        { 
+            _passiveReceiveCts = null;
+            _consumerTask = null;
+            // 清空队列
+            while (_frameQueue.TryDequeue(out _)) { }
+        }
     }
     
   
@@ -195,13 +234,28 @@ public sealed class OtherConnectionService
     private readonly object _rawMessageLock = new();
     private readonly List<string> _rawReceivedMessages = new();
     private byte[] _currentReadPayload = { 0x40,0x10,0x00,0x01,0x00,0x00,0x00,0x00 };
+    
+    /// <summary>
+    /// 事务进行中标识，用于防止消息竞争
+    /// </summary>
+    private volatile bool _transactionInProgress = false;
+    
+    /// <summary>
+    /// CAN缓冲区访问锁，确保事务期间其他线程无法读取消息
+    /// </summary>
+    private readonly SemaphoreSlim _bufferAccessLock = new SemaphoreSlim(1, 1);
     // 被动接收循环控制
     private CancellationTokenSource? _passiveReceiveCts;
+    // 用于解耦数据接收和事件处理的队列（生产者-消费者模式）
+    private readonly ConcurrentQueue<byte[]> _frameQueue = new ConcurrentQueue<byte[]>();
+    // 消费者任务
+    private Task? _consumerTask;
 
     /// <summary>
     /// 当被动接收到任意 CAN 载荷时触发（原始载荷字节）
     /// </summary>
     public event Action<byte[]>? RealtimeFrameReceived;
+
 
     /// <summary>
     /// 获取设备是否打开
@@ -215,6 +269,12 @@ public sealed class OtherConnectionService
     /// 获取是否有通道已启动
     /// </summary>
     public bool IsStarted => _channelStarted.Any(started => started);
+    
+    /// <summary>
+    /// 获取事务是否正在进行中
+    /// </summary>
+    public bool TransactionInProgress => _transactionInProgress;
+    
     public int ActiveChannelIndex { get; set; }
     public string LastSentPayloadHex { get; private set; } = "00 11 22 33 44 55 66 77";
 
@@ -561,36 +621,51 @@ public sealed class OtherConnectionService
         await _canAccessLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            // 设置事务进行中标识，防止其他线程截获消息
+            _transactionInProgress = true;
+            
             //获取锁后再次判断写优先或写后冷却窗口
             if (Volatile.Read(ref _pendingWriteRequests) > 0 || DateTime.UtcNow < _readBlockedUntilUtc)
             {
                 // 有写请求或处于冷却期，回退为空响应
                 return Array.Empty<byte>();
             }
-            // 发送请求（在持有锁期间发送并接收，保持事务性）
-            var sendResult = SendMessage(channelIndex, request);
-            if (!sendResult.Succeeded)
+            
+            // 获取缓冲区访问锁，确保事务期间其他线程无法读取CAN消息
+            await _bufferAccessLock.WaitAsync().ConfigureAwait(false);
+
+            try
             {
-                throw new InvalidOperationException($"发送请求失败: {sendResult.Message}");
+                // 发送请求（在持有锁期间发送并接收，保持事务性）
+                var sendResult = SendMessage(channelIndex, request);
+                if (!sendResult.Succeeded)
+                {
+                    throw new InvalidOperationException($"发送请求失败: {sendResult.Message}");
+                }
+                // 等待读取响应或超时
+                var timeoutTask = Task.Delay(200);
+                var readTask = Task.Run(() => ReceiveCanResponse(channelIndex));
+
+                var finished = await Task.WhenAny(readTask, timeoutTask).ConfigureAwait(false);
+
+                if (finished == readTask)
+                {
+                    try
+                    {
+                        var response = await readTask.ConfigureAwait(false);
+
+                        return response ?? Array.Empty<byte>();
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidOperationException("接收响应时发生错误", ex);
+                    }
+                }
             }
-            // 等待读取响应或超时
-            var timeoutTask = Task.Delay(200);
-            var readTask = Task.Run(() => ReceiveCanResponse(channelIndex));
-
-            var finished = await Task.WhenAny(readTask, timeoutTask).ConfigureAwait(false);
-
-            if (finished == readTask)
+            finally
             {
-                try
-                {
-                    var response = await readTask.ConfigureAwait(false);
-
-                    return response ?? Array.Empty<byte>();
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException("接收响应时发生错误", ex);
-                }
+                // 释放缓冲区访问锁
+                _bufferAccessLock.Release();
             }
 
             // 超时，返回空数组
@@ -598,6 +673,8 @@ public sealed class OtherConnectionService
         }
         finally
         {
+            // 重置事务进行中标识
+            _transactionInProgress = false;
             try { _canAccessLock.Release(); } catch { }
         }
     }
@@ -697,19 +774,33 @@ public sealed class OtherConnectionService
         return Array.Empty<byte>();
 
     }
-
     /// <summary>
-    /// 与 ReceiveCanResponse 类似，但不验证格式，直接返回原始接收载荷（标准或 FD）
+    /// 与 ReceiveCanResponse 类似，但不验证格式，直接返回所有原始接收载荷（标准或 FD）
     /// </summary>
     /// <param name="channelIndex"></param>
-    /// <returns></returns>
-    private byte[] ReceiveAnyCanResponse(int channelIndex)
+    /// <returns>所有接收到的CAN消息列表</returns>
+    private List<byte[]> ReceiveAnyCanResponse(int channelIndex)
     {
-        var currentChannelHandle = _channelHandles[channelIndex];
-        var startTime = DateTime.UtcNow;
-
-        while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(50))
+        // 如果有事务正在进行，返回空列表，避免截获指令响应
+        if (_transactionInProgress)
         {
+            return new List<byte[]>();
+        }
+        
+        // 尝试获取缓冲区访问锁，如果获取失败（事务进行中），返回空列表
+        if (!_bufferAccessLock.Wait(0))
+        {
+            return new List<byte[]>();
+        }
+        
+        try
+        {
+            var currentChannelHandle = _channelHandles[channelIndex];
+            var startTime = DateTime.UtcNow;
+            var allMessages = new List<byte[]>();
+
+            while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(50))
+            {
             var datalen = Method.ZCAN_GetReceiveNum(currentChannelHandle, 0);
             var fddatalen = Method.ZCAN_GetReceiveNum(currentChannelHandle, 1);
 
@@ -730,7 +821,7 @@ public sealed class OtherConnectionService
                             {
                                 var payload = new byte[dlc];
                                 Array.Copy(data.frame.data, payload, dlc);
-                                return payload;
+                                allMessages.Add(payload);
                             }
                         }
                     }
@@ -746,6 +837,7 @@ public sealed class OtherConnectionService
                 try
                 {
                     uint received = Method.ZCAN_ReceiveFD(currentChannelHandle, fdPointer, (uint)fddatalen, 50);
+                   
                     if (received > 0)
                     {
                         for (uint i = 0; i < received; i++)
@@ -756,7 +848,7 @@ public sealed class OtherConnectionService
                             {
                                 var payload = new byte[len];
                                 Array.Copy(data.frame.data, payload, len);
-                                return payload;
+                                allMessages.Add(payload);
                             }
                         }
                     }
@@ -766,17 +858,13 @@ public sealed class OtherConnectionService
             }
         }
 
-        return Array.Empty<byte>();
-    }
-
-    /// <summary>
-    /// 异步接收CAN响应
-    /// </summary>
-    /// <param name="channelIndex">通道索引</param>
-    /// <returns>响应数据</returns>
-    private async Task<byte[]> ReceiveCanResponseAsync(int channelIndex)
-    {
-        return await Task.Run(() => ReceiveCanResponse(channelIndex));
+        return allMessages;
+        }
+        finally
+        {
+            // 释放缓冲区访问锁
+            _bufferAccessLock.Release();
+        }
     }
 
     /// <summary>
@@ -879,161 +967,6 @@ public sealed class OtherConnectionService
     }
 
     /// <summary>
-    /// 发布CAN消息
-    /// </summary>
-    /// <param name="data">CAN数据</param>
-    /// <param name="len">数据长度</param>
-    /// <param name="channelIndex">通道索引</param>
-    //private void PublishCanMessages(ZCAN_Receive_Data[] data, uint len, int channelIndex)
-    //{
-    //    var messages = new List<string>();
-    //    // 遍历所有接收到的数据
-    //    for (uint i = 0; i < len; i++)
-    //    {
-    //        var can = data[i];
-    //        var id = can.frame.can_id;
-    //        // 检查是否为扩展帧
-    //        var eff = IsEff(id) ? "扩展帧" : "标准帧";
-    //        // 检查是否为远程帧
-    //        var rtr = IsRtr(id) ? "远程帧" : "数据帧";
-        
-         
-            //添加数据内容
-            //for (uint j = 0; j < can.frame.can_dlc; j++)
-            //{
-            //    text = $"{text}{can.frame.data[j]:X2} ";
-            //}
-
-            //StoreRawMessage($"通道{channelIndex} CAN {ConvertToHexString(can.frame.data, can.frame.can_dlc)}");
-            //messages.Add(text);
-            ////尝试解析为 Modbus 响应并更新缓存
-            //try
-            //{
-            //    var dlc = (int)can.frame.can_dlc;
-            //    if (dlc >= 4 && can.frame.data != null && can.frame.data.Length >= dlc)
-            //    {
-            //        var payload = new byte[dlc];
-            //        Array.Copy(can.frame.data, payload, dlc);
-            //        if (payload[0] == ReadCommandCode)
-            //        {
-            //            int parsedStart = (payload[1] << 8) | payload[2];
-            //            int count = payload[3];
-            //            // 期望后续数据为 count 个 16 位寄存器（高字节在前）
-            //            if (payload.Length >= 4 + count * 2)
-            //            {
-            //                var values = new int[count];
-            //                for (int k = 0; k < count; k++)
-            //                {
-            //                    int hi = payload[4 + k * 2];
-            //                    int lo = payload[4 + k * 2 + 1];
-            //                    values[k] = (hi << 8) | lo;
-            //                }
-            //                _modbusService?.UpdateCacheFromExternal(parsedStart, values);
-            //                // 如果存在等待该起始地址的同步读取请求，完成它
-            //                lock (_pendingReadLock)
-            //                {
-            //                    if (_pendingReadTcs != null && parsedStart == _pendingReadStart)
-            //                    {
-            //                        try { _pendingReadTcs.TrySetResult(values); } catch { }
-            //                    }
-            //                }
-            //            }
-            //        }
-            //    }
-            //}
-            //catch
-            //{
-            //    // 忽略解析错误，避免影响接收线程
-            //}
-        //}
-
-        // 触发消息接收事件
-    ////    if (messages.Count > 0)
-    ////    {
-    ////        MessagesReceived?.Invoke(messages);
-    ////    }
-    ////}
-
-    /// <summary>
-    /// 发布CAN FD消息
-    /// </summary>
-    /// <param name="data">CAN FD数据</param>
-    /// <param name="len">数据长度</param>
-    /// <param name="channelIndex">通道索引</param>
-    //private void PublishCanFdMessages(ZCAN_ReceiveFD_Data[] data, uint len, int channelIndex)
-    //{
-    //    var messages = new List<string>();
-    //    // 遍历所有接收到的数据
-    //    for (uint i = 0; i < len; i++)
-    //    {
-    //        var canfd = data[i];
-    //        var id = canfd.frame.can_id;
-    //        // 检查是否为扩展帧
-    //        var eff = IsEff(id) ? "扩展帧" : "标准帧";
-    //        // 检查是否为远程帧
-    //        var rtr = IsRtr(id) ? "远程帧" : "数据帧";
-
-            
-        
-            // 添加数据内容
-            //for (uint j = 0; j < canfd.frame.len; j++)
-            //{
-            //    text = $"{text}{canfd.frame.data[j]:X2} ";
-            //}
-
-            //StoreRawMessage($"通道{channelIndex} CANFD {ConvertToHexString(canfd.frame.data, canfd.frame.len)}");
-            //messages.Add(text);
-
-            //try
-            //{
-            //    var length = (int)canfd.frame.len;
-            //    if (length >= 5 && canfd.frame.data != null && canfd.frame.data.Length >= length)
-            //    {
-            //        var payload = new byte[length];
-            //        Array.Copy(canfd.frame.data, payload, length);
-            //        if (payload[0] == Readresponse && payload[1] == 0x60)
-            //        {
-            //            int parsedStart = (payload[2] << 8) | payload[3];
-            //            int dataLen = payload[4];
-            //            // 确保数据长度完整
-            //            if (dataLen >= 0 && payload.Length >= 5 + dataLen)
-            //            {
-            //                // 每个寄存器 2 字节（高字节在前），按 dataLen 字节解析
-            //                int registerCount = dataLen / 2;
-            //                var values = new int[registerCount];
-            //                for (int k = 0; k < registerCount; k++)
-            //                {
-            //                    int hi = payload[5 + k * 2];
-            //                    int lo = payload[5 + k * 2 + 1];
-            //                    values[k] = (hi << 8) | lo;
-            //                }
-            //                _modbusService?.UpdateCacheFromExternal(parsedStart, values);
-            //                // 完成任何等待中的同步读取请求
-            //                lock (_pendingReadLock)
-            //                {
-            //                    if (_pendingReadTcs != null && parsedStart == _pendingReadStart)
-            //                    {
-            //                        try { _pendingReadTcs.TrySetResult(values); } catch { }
-            //                    }
-            //                }
-            //            }
-            //        }
-            //    }
-            //}
-            //catch
-            //{
-            //    // 忽略解析错误，避免影响接收线程
-            //}
-    //    }
-
-    //    // 触发消息接收事件
-    //    if (messages.Count > 0)
-    //    {
-    //        MessagesReceived?.Invoke(messages);
-    //    }
-    //}
-
-    /// <summary>
     /// 停止接收线程
     /// </summary>
     private void StopReceiveThreads()
@@ -1083,28 +1016,6 @@ public sealed class OtherConnectionService
         }
     }
 
-    /// <summary>
-    /// 分割数据字符串为字节数组
-    /// </summary>
-    /// <param name="data">数据字符串</param>
-    /// <param name="transData">目标字节数组</param>
-    /// <param name="maxLen">最大长度</param>
-    /// <returns>实际长度</returns>
-    private static int SplitData(string data, byte[] transData, int maxLen)
-    {
-        // 按空格分割数据字符串
-        var dataArray = data.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        // 计算实际长度
-        var length = Math.Min(maxLen, dataArray.Length);
-
-        // 转换为字节数组
-        for (var i = 0; i < length; i++)
-        {
-            transData[i] = Convert.ToByte(dataArray[i].Substring(0, 2), 16);
-        }
-
-        return length;
-    }
 
     /// <summary>
     /// 生成CAN ID
@@ -1121,27 +1032,6 @@ public sealed class OtherConnectionService
         var uerr = Convert.ToBoolean(err) ? 1U : 0U;
         return id | ueff << 31 | urtr << 30 | uerr << 29;
     }
-
-    /// <summary>
-    /// 从CAN ID中获取基础ID
-    /// </summary>
-    /// <param name="id">CAN ID</param>
-    /// <returns>基础ID</returns>
-    private static uint GetId(uint id) => id & CanIdFlag;
-
-    /// <summary>
-    /// 检查是否为扩展帧
-    /// </summary>
-    /// <param name="id">CAN ID</param>
-    /// <returns>是否为扩展帧</returns>
-    private static bool IsEff(uint id) => Convert.ToBoolean(id & CanEffFlag);
-
-    /// <summary>
-    /// 检查是否为远程帧
-    /// </summary>
-    /// <param name="id">CAN ID</param>
-    /// <returns>是否为远程帧</returns>
-    private static bool IsRtr(uint id) => Convert.ToBoolean(id & CanRtrFlag);
 
     private OtherConnectionResult SendMessage(int selectedChannelIndex, byte[] payload)
     {
@@ -1255,21 +1145,6 @@ public sealed class OtherConnectionService
         return OtherConnectionResult.Fail("发送数据失败", errorMessage);
     }
 
-    /// <summary>
-    /// 存储原始消息
-    /// </summary>
-    /// <param name="message">原始消息字符串</param>
-    private void StoreRawMessage(string message)
-    {
-        lock (_rawMessageLock)
-        {
-            _rawReceivedMessages.Add(message);
-            if (_rawReceivedMessages.Count > 500)
-            {
-                _rawReceivedMessages.RemoveRange(0, _rawReceivedMessages.Count - 500);
-            }
-        }
-    }
 
     /// <summary>
     /// 将字节数组转换为十六进制字符串
