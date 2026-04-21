@@ -410,15 +410,25 @@ namespace WpfApp1
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        // 将捕获到的完整窗口追加到历史缓冲区（不清空）
                         var buffer = _historyBuffers[channel];
+
+                        // 将捕获到的完整窗口追加到历史缓冲区（不清空）
                         buffer.AddRange(capturedData);
+
+                        // 确保所有通道缓冲区大小一致（关键修复）
+                        SyncAllChannelBuffers();
 
                         // 限制缓冲区大小
                         if (buffer.Count > MAX_BUFFER_SIZE)
                         {
                             int removeCount = buffer.Count - MAX_BUFFER_SIZE;
-                            buffer.RemoveRange(0, removeCount);
+                            
+                            // 所有通道同步删除相同数量的数据
+                            foreach (var kvp in _historyBuffers)
+                            {
+                                kvp.Value.RemoveRange(0, removeCount);
+                            }
+                            
                             _bufferStartIndex += removeCount;
                         }
 
@@ -541,6 +551,29 @@ namespace WpfApp1
             MainPlot.Refresh();
         }
 
+        /// <summary>
+        /// 同步所有通道的缓冲区大小，确保它们始终保持一致
+        /// 新通道会自动填充NaN对齐到当前最大缓冲区大小
+        /// </summary>
+        private void SyncAllChannelBuffers()
+        {
+            // 找到最大的缓冲区大小
+            int maxBufferSize = _historyBuffers.Values.Max(b => b.Count);
+            
+            // 确保所有通道的缓冲区大小一致
+            foreach (var kvp in _historyBuffers)
+            {
+                var chBuffer = kvp.Value;
+                int currentSize = chBuffer.Count;
+                
+                // 如果当前通道缓冲区小于最大大小，填充NaN
+                if (currentSize < maxBufferSize)
+                {
+                    int paddingCount = maxBufferSize - currentSize;
+                    chBuffer.InsertRange(0, Enumerable.Repeat(double.NaN, paddingCount));
+                }
+            }
+        }
 
         // 所有通道共用一个随机数生成器（固定种子，确保噪声模式一致）
         private readonly Random _sharedRandom = new Random(12345);

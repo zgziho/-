@@ -1938,6 +1938,21 @@ namespace WpfApp1
             }
         }
 
+        /// <summary>
+        /// 同步通道的读取索引，确保新通道从与其他通道相同的位置开始读取
+        /// </summary>
+        /// <param name="channel">通道号</param>
+        public void SyncChannelReadIndex(int channel)
+        {
+            lock (_oscilloscopeLocks[channel])
+            {
+                // 找到当前读取索引最大的通道
+                int maxReadIndex = _readIndices.Values.Max();
+                // 将新通道的读取索引设置为最大索引
+                _readIndices[channel] = maxReadIndex;
+            }
+        }
+
     }
 
     /// <summary>
