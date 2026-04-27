@@ -119,7 +119,7 @@ namespace WpfApp1
         /// <summary>
         /// 读取间隔时间（毫秒）
         /// </summary>
-        private volatile int _readIntervalMs = 50;
+        private volatile int _readIntervalMs = 100;
 
         /// <summary>
         /// 预加载的读取参数列表
@@ -134,12 +134,17 @@ namespace WpfApp1
         /// </summary>
         private Dictionary<int, int> _lastRegisterValues = new Dictionary<int, int>();
 
+        /// <summary>
+        /// 控制模式选择是否已成功更新过一次
+        /// </summary>
+        private bool _controlModeSelectionUpdated = false;
+
 
         /// <summary>
         /// 选中的控制模式
         /// </summary>
         [ObservableProperty]
-        private string _selectedOption = "电流环";
+        private string _selectedOption = "--未选择--";
 
         /// <summary>
         /// 选中的分组视图模型
@@ -173,7 +178,6 @@ namespace WpfApp1
             { "Dkp", "" },
             { "Qkp", "" },
             { "CurKi", "" },  // 电流环Ki
-            { "TorqueBand", "" },
             
             // 速度环参数
             { "SpeedKp", "" },  // 速度环Kp
@@ -188,6 +192,7 @@ namespace WpfApp1
             
             // VF模式参数
             // "占空比给定"和"旋转频率"已在_setpointValues中存储
+            { "DutyCycle", "" },
             
             // 变频器参数
             { "旋转频率给定", "" },
@@ -297,7 +302,6 @@ namespace WpfApp1
                     _count = Math.Min(_count + length, capacity);
                 }
             }
-
             /// <summary>
             /// 从指定读取索引开始读取指定数量的数据点
             /// </summary>
@@ -308,17 +312,16 @@ namespace WpfApp1
             {
                 lock (_lock)
                 {
-                    Debug.WriteLine($"从{readIndex}开始读{count} 剩余总数{_count}");
                     if (count> _count) return Array.Empty<double>();
 
                     var result = new double[count];
                     
                     for (int i = 0; i < count; i++)
                     {
+                        
                         result[i] = _buffer[readIndex];
                         readIndex = (readIndex + 1) % Capacity;
                     }
-                    
                     _count -= count;
                     return result;
                 }
@@ -339,10 +342,10 @@ namespace WpfApp1
         /// </summary>
         private readonly Dictionary<int, CircularBuffer> _oscilloscopeBuffers = new()
         {
-            { 1, new CircularBuffer(2000) },  // 通道1：2000个点容量
-            { 2, new CircularBuffer(2000) },  // 通道2：2000个点容量
-            { 3, new CircularBuffer(2000) },  // 通道3：2000个点容量
-            { 4, new CircularBuffer(2000) }   // 通道4：2000个点容量
+            { 1, new CircularBuffer(20000) },  // 通道1：2000个点容量
+            { 2, new CircularBuffer(20000) },  // 通道2：2000个点容量
+            { 3, new CircularBuffer(20000) },  // 通道3：2000个点容量
+            { 4, new CircularBuffer(20000) }   // 通道4：2000个点容量
         };
 
         /// <summary>
@@ -417,7 +420,7 @@ namespace WpfApp1
         /// <summary>
         /// 模式选项数据源
         /// </summary>
-        public List<string> GroupOptions { get; } = new() { "电流环", "速度环", "位置环", "VF模式", "变频器" };
+        public List<string> GroupOptions { get; } = new() { "--未选择--", "电流环", "速度环", "位置环", "VF模式", "变频器", "自学习", "过流测试", "转矩环频带" };
 
         /// <summary>
         /// 通道选项数据源
@@ -439,6 +442,17 @@ namespace WpfApp1
             
             // 保存当前模式的所有参数值
             SaveCurrentGroupParameters();
+
+            // 处理"--未选择--"选项
+            if (value == "--未选择--")
+            {
+                SelectedGroup = null;
+                _currentSetpointConfigName = string.Empty;
+                SetpointDisplayName = string.Empty;
+                // 发送控制模式索引
+                _ = HandleControlModeSelection();
+                return;
+            }
 
             switch (value)
             {
@@ -465,6 +479,19 @@ namespace WpfApp1
                 case "变频器":
                     SelectedGroup = new ViewModels.GroupEViewModel();
                     break;
+                case "自学习":
+                    SelectedGroup = new ViewModels.GroupFViewModel();
+                    _currentSetpointConfigName = string.Empty;
+                    SetpointDisplayName = string.Empty;
+                    break;
+                case "过流测试":
+                    SelectedGroup = new ViewModels.GroupGViewModel();
+                    _currentSetpointConfigName = "占空比给定";
+                    break;
+                case "转矩环频带":
+                    SelectedGroup = new ViewModels.GroupHViewModel();
+                    _currentSetpointConfigName = "电流给定";
+                    break;
             }
 
             // 加载新模式的给定值
@@ -477,6 +504,9 @@ namespace WpfApp1
             LoadCurrentGroupParameters();
 
             SetpointDisplayName = _currentSetpointConfigName;
+
+            // 发送控制模式索引
+            _ = HandleControlModeSelection();
         }
 
         /// <summary>
@@ -489,10 +519,8 @@ namespace WpfApp1
             switch (SelectedGroup)
             {
                 case GroupAViewModel groupA:
-                    _parameterValues["Dkp"] = groupA.Dkp;
                     _parameterValues["Qkp"] = groupA.Qkp;
                     _parameterValues["CurKi"] = groupA.Ki;
-                    _parameterValues["TorqueBand"] = groupA.TorqueBand;
                     break;
                 case GroupBViewModel groupB:
                     _parameterValues["SpeedKp"] = groupB.Kp;
@@ -514,6 +542,16 @@ namespace WpfApp1
                     _parameterValues["电流数字给定"] = groupE.CurrentDigitalRef;
                     _parameterValues["电流峰值给定"] = groupE.CurrentPeak;
                     break;
+                case GroupFViewModel groupF:
+                    break;
+                case GroupGViewModel groupG:
+                    _parameterValues["占空比给定"] = groupG.DutyCycle;
+                    _parameterValues["旋转频率"] = groupG.RotateFreq;
+                    break;
+                case GroupHViewModel groupH:
+                    _parameterValues["电流给定"] = groupH.CurrentRef;
+                    _parameterValues["旋转频率给定"] = groupH.SignalFreq;
+                    break;
             }
         }
 
@@ -530,7 +568,6 @@ namespace WpfApp1
                     groupA.Dkp = _parameterValues["Dkp"] ?? "";
                     groupA.Qkp = _parameterValues["Qkp"] ?? "";
                     groupA.Ki = _parameterValues["CurKi"] ?? "";
-                    groupA.TorqueBand = _parameterValues["TorqueBand"] ?? "";
                     break;
                 case GroupBViewModel groupB:
                     groupB.Kp = _parameterValues["SpeedKp"] ?? "";
@@ -551,6 +588,16 @@ namespace WpfApp1
                     groupE.CurrentRatio = _parameterValues["电流比率给定"] ?? "";
                     groupE.CurrentDigitalRef = _parameterValues["电流数字给定"] ?? "";
                     groupE.CurrentPeak = _parameterValues["电流峰值给定"] ?? "";
+                    break;
+                case GroupFViewModel groupF:
+                    break;
+                case GroupGViewModel groupG:
+                    groupG.DutyCycle = _parameterValues["占空比给定"] ?? "";
+                    groupG.RotateFreq = _parameterValues["旋转频率"] ?? "";
+                    break;
+                case GroupHViewModel groupH:
+                    groupH.CurrentRef = _parameterValues["电流给定"] ?? "";
+                    groupH.SignalFreq = _parameterValues["旋转频率给定"] ?? "";
                     break;
             }
         }
@@ -624,6 +671,7 @@ namespace WpfApp1
         private string _positionFeedback = "/";
         #endregion
 
+        private bool _isFirstRead = true;
         /// <summary>
         /// 主窗口视图模型构造函数
         /// </summary>
@@ -646,9 +694,6 @@ namespace WpfApp1
             //读取配置表数据
             LoadJogConfigs();
 
-            // 初始化默认的控制模式
-            SelectedGroup = new ViewModels.GroupAViewModel();
-
             timer = new DispatcherTimer();
             timer.Interval = TimeSpan.FromMilliseconds(500);
             timer.Tick += Timer_Tick;
@@ -661,7 +706,7 @@ namespace WpfApp1
         }
 
         /// <summary>
-        /// 预加载读取参数配置
+        /// 预加载读取参数配置（筛选数据）
         /// </summary>
         private void PreloadReadParameters()
         {
@@ -696,6 +741,27 @@ namespace WpfApp1
                 Debug.WriteLine($"[Preload] 预加载失败: {ex.Message}");
             }
 
+        }
+
+        /// <summary>
+        /// 预加载所有参数配置（未筛选数据）
+        /// </summary>
+        private void PreloadAllParameters()
+        {
+            try
+            {
+                // 从Excel配置中预加载所有参数，不进行筛选
+                var allParameters = _excelViewModel._allPers
+                    .Where(p => !string.IsNullOrEmpty(p.ParsID))
+                    .OrderBy(p => ParseAddress(p.ParsID))
+                    .ToList();
+
+                Debug.WriteLine($"[PreloadAll] 预加载所有参数完成: {allParameters.Count} 个参数");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PreloadAll] 预加载所有参数失败: {ex.Message}");
+            }
         }
 
         private int _preloadedMinAddress = 0;
@@ -833,7 +899,20 @@ namespace WpfApp1
 
                     if (_isModbusReading && readMode != RealtimeReadMode.None)
                     {
-                        await ExecuteHighFrequencyRead(readMode);
+                        if (_isFirstRead)
+                        {
+                            // 第一次读取时，读取所有数据到缓存
+                            await ExecuteHighFrequencyRead(readMode, true);
+                            // 重新预加载参数（确保使用最新数据）
+                            PreloadReadParameters();
+                            // 标记第一次读取已完成
+                            _isFirstRead = false;
+                        }
+                        else
+                        {
+                            // 后续读取使用筛选的数据
+                            await ExecuteHighFrequencyRead(readMode, false);
+                        }
                     }
                     else if(readMode == RealtimeReadMode.None)
                     {
@@ -841,7 +920,7 @@ namespace WpfApp1
                     }
                     else
                     {
-                        Debug.WriteLine($"[ModbusReadThread] 跳过读取 - IsReading: {_isModbusReading}, Mode: {readMode}");
+                        //Debug.WriteLine($"[ModbusReadThread] 跳过读取 - IsReading: {_isModbusReading}, Mode: {readMode}");
                     }
 
                     _modbusReadEvent.Reset();
@@ -876,7 +955,7 @@ namespace WpfApp1
             {
                 return RealtimeReadMode.Can;
             }
-
+            
             // 无可用连接
             return RealtimeReadMode.None;
         }
@@ -907,6 +986,23 @@ namespace WpfApp1
 
       
         /// <summary>
+        /// 从缓存中获取最大电流值
+        /// </summary>
+        /// <returns>最大电流值</returns>
+        private double GetMaxCurrentFromCache()
+        {
+            // 这里需要根据实际情况从缓存中获取最大电流值
+            // 假设最大电流值存储在某个特定地址
+            // 示例：从地址0x1000获取最大电流值
+            string maxCurrentStr = _modbusService?.GetCachedValue(0x1000) ?? "100";
+            if (double.TryParse(maxCurrentStr, out double maxCurrent))
+            {
+                return maxCurrent;
+            }
+            return 100; // 默认值
+        }
+
+        /// <summary>
         /// 从缓存更新UI界面（在定时器中调用）
         /// </summary>
         private void UpdateUIFromCache()
@@ -932,21 +1028,53 @@ namespace WpfApp1
             }
             
             // 批量UI更新
-            if (updateList.Count > 0)
+            Application.Current?.Dispatcher.Invoke(() =>
             {
-                Application.Current?.Dispatcher.Invoke(() =>
+                // 更新常规参数
+                foreach (var (parsItem, parameterName, value) in updateList)
                 {
-                    foreach (var (parsItem, parameterName, value) in updateList)
+                    if (!string.IsNullOrEmpty(parameterName))
                     {
-                        if (!string.IsNullOrEmpty(parameterName))
+                        UpdateViewModelProperty(parameterName, value);
+                    }
+                }
+                
+                // 更新控制模式下拉框选择
+                UpdateControlModeSelection();
+            });
+        }
+
+        /// <summary>
+        /// 更新控制模式下拉框选择
+        /// </summary>
+        private void UpdateControlModeSelection()
+        {
+            if (_controlModeSelectionUpdated)
+                return;
+
+            // 从配置表中获取工作模式地址配置
+            if (TryGetConfig("工作模式", out var modeConfig))
+            {
+                // 解析地址
+                if (TryParseAddress(modeConfig.AddressId, out var address))
+                {
+                    // 从缓存中获取值
+                    string cachedValue = _modbusService?.GetCachedValue(address) ?? "";
+                    if (!string.IsNullOrEmpty(cachedValue) && int.TryParse(cachedValue, out int index))
+                    {
+                        // 确保索引在有效范围内
+                        if (index >= 0 && index < GroupOptions.Count)
                         {
-                            UpdateViewModelProperty(parameterName, value);
+                            // 更新下拉框选择
+                            SelectedOption = GroupOptions[index];
+                            _controlModeSelectionUpdated = true;
                         }
                     }
-                
-                });
+                }
             }
         }
+
+
 
         /// <summary>
         /// Modbus读取
@@ -1014,9 +1142,11 @@ namespace WpfApp1
         }
 
         /// <summary>
-        /// 执行高频Modbus读取
+        /// 执行高频读取
         /// </summary>
-        private async Task ExecuteHighFrequencyRead(RealtimeReadMode readMode)
+        /// <param name="readMode">读取模式</param>
+        /// <param name="readAll">是否读取所有数据（包括非"读"项）</param>
+        private async Task ExecuteHighFrequencyRead(RealtimeReadMode readMode, bool readAll = false)
         {
             try
             {
@@ -1026,7 +1156,7 @@ namespace WpfApp1
                         await OptimizedReadDeviceData();
                         break;
                 case RealtimeReadMode.Can:
-                        await ExecuteHighFrequencyCanRead();
+                        await ExecuteHighFrequencyCanRead(readAll);
                         break;
                 }
             }
@@ -1036,8 +1166,18 @@ namespace WpfApp1
             }
         }
 
-        private async Task ExecuteHighFrequencyCanRead()
+        /// <summary>
+        /// 执行高频CAN读取
+        /// </summary>
+        /// <param name="readAll">是否读取所有数据（包括非"读"项）</param>
+        private async Task ExecuteHighFrequencyCanRead(bool readAll = false)
         {
+            // 检查是否已停止高频读取
+            if (!_isModbusReading)
+            {
+                return;
+            }
+            
             // 如果有事务正在进行，跳过本次读取，避免截获指令响应
             if (_otherConnectionService.TransactionInProgress)
             {
@@ -1050,60 +1190,138 @@ namespace WpfApp1
                 Debug.WriteLine("[CanRead] CAN未连接");
                 return;
             }
-            if (_preloadedReadParameters.Count == 0)
-            {
-                Debug.WriteLine("[CanRead] 没有预加载的参数");
-                return;
-            }
 
             // 若已进入被动接收模式（示波器使能），由被动循环处理收到的数据，直接返回
             if (_isPassiveCanListening)
                 return;
 
-            int minAddress = ParseAddress(_preloadedReadParameters.First().ParsID);
-            int maxAddress = ParseAddress(_preloadedReadParameters.Last().ParsID);
-            int count = maxAddress - minAddress + 1;
-
             if (!_hasChannelSelected)
             {
                 try
                 {
-                    var payload = _otherConnectionService.BuildRealtimeReadPayload(minAddress, count*2);
-                    var response = await _otherConnectionService.SendRealtimeReadMessageAsync(payload);
-                    if (response == null || response.Length == 0)
+                    List<int> addresses;
+                    
+                    if (readAll)
                     {
-                        Debug.WriteLine("[CanRead] 批量读取未收到响应或超时");
+                        // 读取所有数据（包括非"读"项）
+                        addresses = _excelViewModel._allPers
+                            .Select(p => ParseAddress(p.ParsID))
+                            .Where(addr => addr > 0)
+                            .Distinct()
+                            .OrderBy(addr => addr)
+                            .ToList();
+                        Debug.WriteLine($"[CanRead] 读取所有数据，共 {addresses.Count} 个地址");
+                    }
+                    else
+                    {
+                        // 读取筛选后的数据（仅"读"项）
+                        addresses = _preloadedReadParameters
+                            .Select(p => ParseAddress(p.ParsID))
+                            .Where(addr => addr > 0)
+                            .Distinct()
+                            .OrderBy(addr => addr)
+                            .ToList();
+                        Debug.WriteLine($"[CanRead] 读取筛选数据，共 {addresses.Count} 个地址");
+                    }
+
+                    if (addresses.Count == 0)
+                    {
+                        Debug.WriteLine("[CanRead] 没有有效的地址");
                         return;
                     }
 
-                    
-                    if (response.Length >= 4 && response[0] == 0x60)
+                    // 将地址分割为连续的地址段
+                    var addressSegments = new List<List<int>>();
+                    var currentSegment = new List<int> { addresses[0] };
+
+                    for (int i = 1; i < addresses.Count; i++)
                     {
-                        int parsedStart = (response[1] << 8) | response[2];
-                        int dataLen = response[3];
-                        if (dataLen >= 0 && response.Length >= 4 + dataLen)
+                        if (addresses[i] == addresses[i - 1] + 1)
                         {
-                            int registerCount = dataLen / 2;
-                            var values = new int[registerCount];
-                            for (int k = 0; k < registerCount; k++)
-                            {
-                                int hi = response[4 + k * 2];
-                                int lo = response[4 + k * 2 + 1];
-                                values[k] = (hi << 8) | lo;
-                            }
-                            _modbusService?.UpdateCacheFromExternal(parsedStart, values);
+                            // 地址连续，添加到当前段
+                            currentSegment.Add(addresses[i]);
+                        }
+                        else
+                        {
+                            // 地址不连续，结束当前段并开始新段
+                            addressSegments.Add(currentSegment);
+                            currentSegment = new List<int> { addresses[i] };
                         }
                     }
-                    else if (response.Length >= 2)
+                    // 添加最后一个段
+                    addressSegments.Add(currentSegment);
+
+                    // 对每个连续地址段进行分批读取
+                    foreach (var segment in addressSegments)
                     {
-                        var values = new int[response.Length / 2];
-                        for (int k = 0; k < values.Length; k++)
+                        // 检查是否已停止高频读取
+                        if (!_isModbusReading)
                         {
-                            int hi = response[k * 2];
-                            int lo = response[k * 2 + 1];
-                            values[k] = (hi << 8) | lo;
+                            return;
                         }
-                        _modbusService?.UpdateCacheFromExternal(minAddress, values);
+                        
+                        int startAddress = segment[0];
+                        int endAddress = segment[^1];
+                        int totalRegisters = endAddress - startAddress + 1;
+
+                        // 分批读取，每次最多30个寄存器
+                        int batchSize = 30;
+                        int currentRegister = 0;
+
+                        while (currentRegister < totalRegisters)
+                        {
+                            // 检查是否已停止高频读取
+                            if (!_isModbusReading)
+                            {
+                                return;
+                            }
+                            
+                            int registersToRead = Math.Min(batchSize, totalRegisters - currentRegister);
+                            int currentStartAddress = startAddress + currentRegister;
+
+                            // 构建读取报文，count参数为字节数，所以需要*2
+                            var payload = _otherConnectionService.BuildRealtimeReadPayload(currentStartAddress, registersToRead * 2);
+                            var response = await _otherConnectionService.SendRealtimeReadMessageAsync(payload);
+
+                            if (response == null || response.Length == 0)
+                            {
+                                Debug.WriteLine($"[CanRead] 批量读取未收到响应或超时，地址: {currentStartAddress}, 数量: {registersToRead}");
+                                currentRegister += registersToRead;
+                                continue;
+                            }
+
+                            // 处理响应数据
+                            if (response.Length >= 4 && response[0] == 0x60)
+                            {
+                                int parsedStart = (response[1] << 8) | response[2];
+                                int dataLen = response[3];
+                                if (dataLen >= 0 && response.Length >= 4 + dataLen)
+                                {
+                                    int registerCount = dataLen / 2;
+                                    var values = new int[registerCount];
+                                    for (int k = 0; k < registerCount; k++)
+                                    {
+                                        int hi = response[4 + k * 2];
+                                        int lo = response[4 + k * 2 + 1];
+                                        values[k] = (hi << 8) | lo;
+                                    }
+                                    _modbusService?.UpdateCacheFromExternal(parsedStart, values);
+                                }
+                            }
+                            else if (response.Length >= 2)
+                            {
+                                var values = new int[response.Length / 2];
+                                for (int k = 0; k < values.Length; k++)
+                                {
+                                    int hi = response[k * 2];
+                                    int lo = response[k * 2 + 1];
+                                    values[k] = (hi << 8) | lo;
+                                }
+                                _modbusService?.UpdateCacheFromExternal(currentStartAddress, values);
+                            }
+
+                            currentRegister += registersToRead;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -1287,6 +1505,23 @@ namespace WpfApp1
         }
 
         /// <summary>
+        /// 处理控制模式选择，发送索引发送给设备
+        /// </summary>
+        private async Task HandleControlModeSelection()
+        {
+            // 从配置表中获取工作模式地址配置
+            if (!TryGetConfig("工作模式", out var modeConfig))
+                return;
+
+            // 获取选择项的索引
+            int index = GroupOptions.IndexOf(SelectedOption);
+            if (index >= 0)
+            {
+                await WriteConfigValueAsync(modeConfig, index.ToString());
+            }
+        }
+
+        /// <summary>
         /// 打开Excel参数表命令
         /// </summary>
         [RelayCommand]
@@ -1381,6 +1616,108 @@ namespace WpfApp1
                 }
             }
         }
+
+        [RelayCommand]
+        private async Task Save()
+        {
+            // 尝试获取“保存”配置项
+            if (!TryGetConfig("保存", out var enableConfig))
+                return;
+
+            if(await WriteConfigValueAsync(enableConfig, "6688"))
+            {
+                Console.WriteLine("保存成功");
+            }
+
+        }
+
+        [RelayCommand]
+        private async Task ClearFault()
+        {
+            // 尝试获取“清除故障”配置项
+            if (!TryGetConfig("清除故障", out var faultConfig))
+                return;
+
+            if(await WriteConfigValueAsync(faultConfig, "0"))
+            {
+                Console.WriteLine("清除故障成功");
+            }
+
+        }
+
+        /// <summary>
+        /// 打开固件升级窗口命令
+        /// </summary>
+        [RelayCommand]
+        public async Task OpenFirmwareUpdate()
+        {
+            // 停止读取操作
+            StopHighFrequencyRead();
+            
+            // 停止CAN被动接收
+            _otherConnectionService.StopPassiveReceive();
+            
+            var firmwareUpdateVm = _serviceProvider.GetRequiredService<FirmwareUpdateViewModel>();
+            
+            // 自定义显示窗口，以便添加关闭事件处理
+            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() => OpenFirmwareUpdate());
+                return;
+            }
+
+            // 1. 实例化窗口
+            var window = new Views.FirmwareUpdate();
+
+            // 2. 绑定 ViewModel
+            window.DataContext = firmwareUpdateVm;
+
+            System.Windows.Window? owner = System.Windows.Application.Current?.MainWindow;
+            if (owner != null)
+            {
+                window.Owner = owner;
+                window.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner;
+               
+          
+            }
+            else
+            {
+                window.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen;
+            }
+
+            // 添加窗口关闭事件处理程序
+            window.Closed += (sender, e) =>
+            {
+                // 窗口关闭时恢复读取操作
+                StartHighFrequencyRead();
+                
+                // 恢复CAN被动接收
+                _otherConnectionService.StartPassiveReceive();
+            };
+
+            // 使用非模态方式显示窗口
+            window.Show();
+            
+            // 确保窗口不会抢占焦点
+            window.Focusable = false;
+        }
+
+        #region
+        private async Task WriteRegister(int address, int value)
+        {
+            byte[] data = new byte[2];
+            data[0] = (byte)(value >> 8);
+            data[1] = (byte)(value & 0xFF);
+            var payload = _otherConnectionService.BuildWritePayload(address, data);
+            Debug.WriteLine($"发送的数据: {BitConverter.ToString(payload)}");
+            var result = _otherConnectionService.SendWriteMessage(payload);
+            if (!result.Succeeded)
+            {
+                throw new System.Exception(result.Message);
+            }
+            await Task.Delay(50);
+        }
+        #endregion
 
         /// <summary>
         /// 提交当前给定值到设备
@@ -1489,6 +1826,23 @@ namespace WpfApp1
 
             // 读取界面输入值；反向点动仅在发送时取负，不回写页面显示
             var valueText = CurrentSetpointValue?.Trim() ?? string.Empty;
+            
+            // 处理电流给定值，需要乘以100
+            if (_currentSetpointConfigName == "电流给定")
+            {
+                if (double.TryParse(valueText, out double currentValue))
+                {
+                    // 电流给定值乘以100
+                    double scaledValue = currentValue * 100;
+                    valueText = scaledValue.ToString(CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    MessageBox.Show("电流给定的值格式错误。");
+                    return false;
+                }
+            }
+            
             if (negative)
             {
                 if (!TryParseToInt(valueText, out var signed))
@@ -1530,12 +1884,42 @@ namespace WpfApp1
                 return false;
             }   
 
+            // 处理特殊参数
+            string processedValue = rawValue;
+            if (double.TryParse(rawValue, out double value))
+            {
+                switch (config.Name)
+                {
+                    case "电流比率给定":
+                        // 电流比率给定：输入100以内的数据，当作百分比，传输给设备的值为最大电流*百分比
+                        double maxCurrent = GetMaxCurrentFromCache();
+                        double ratioValue = maxCurrent * (value / 100);
+                        processedValue = ratioValue.ToString();
+                        break;
+                    case "电流有效值给定":
+                        // 电流有效值给定：数据*1.414
+                        double effectiveValue = value * 1.414;
+                        processedValue = effectiveValue.ToString();
+                        break;
+                    case "电流峰值给定":
+                        // 电流峰值给定：数据*100
+                        double peakValue = value * 100;
+                        processedValue = peakValue.ToString();
+                        break;
+                    case "旋转频率给定":
+                        // 旋转频率给定：数据*10
+                        double freqValue = value * 10;
+                        processedValue = freqValue.ToString();
+                        break;
+                }
+            }
+
             var writeMode = GetWriteProtocolMode();
             
             return writeMode switch
             {
-                WriteProtocolMode.Serial => await WriteSerialConfigValueAsync(config, rawValue, address),
-                WriteProtocolMode.Can => WriteCanConfigValue(config, rawValue, address),
+                WriteProtocolMode.Serial => await WriteSerialConfigValueAsync(config, processedValue, address),
+                WriteProtocolMode.Can => WriteCanConfigValue(config, processedValue, address),
                 _ => ShowNoConnectionMessage()
                 
             };
@@ -1780,7 +2164,6 @@ namespace WpfApp1
         {
             // 从缓存更新UI界面
             UpdateUIFromCache();
-          
         }
 
         /// <summary>
@@ -1810,7 +2193,16 @@ namespace WpfApp1
                         CurrentSet = value+"A";
                         break;
                     case "电流反馈":
-                        CurrentFeedbackPeak = value+"A";
+                        // 将电流反馈数据除100，保留一位小数
+                        if (double.TryParse(value, out double currentValue))
+                        {
+                            double processedValue = currentValue / 100;
+                            CurrentFeedbackPeak = processedValue.ToString("F1") + "A";
+                        }
+                        else
+                        {
+                            CurrentFeedbackPeak = value + "A";
+                        }
                         break;
                     case "电流有效值":
                         CurrentRMS = value + "A";
@@ -1848,9 +2240,6 @@ namespace WpfApp1
             timer?.Stop();
             CleanupModbusReadThread();
         }
-
-
-      
         /// <summary>
         /// 处理CAN实时数据帧，提取示波器数据
         /// 设备每2ms发送一组数据，此方法负责解析并存入环形缓冲区
@@ -1872,15 +2261,13 @@ namespace WpfApp1
                     int hi = payload[idx + 1];
                     int rawValue = (hi << 8) | lo;
                     double value = ConvertRawValueToDouble(rawValue);
-                    Trace.WriteLine($"[OscilloscopeData] 通道:{channel} 原始值: {rawValue} 转换值: {value}");
+                
                     dataPoints.Add(value);
                     idx += 2;
                 }
-
                 // 批量写入环形缓冲区
                 if (dataPoints.Count > 0)
                 {
-                    
                     _oscilloscopeBuffers[channel].Write(dataPoints.ToArray());
 
                 }

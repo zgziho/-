@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:WpfApp1.Views"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         mc:Ignorable="d"
-        Title="其他连接"
+        Title="CAN连接"
         Height="400" Width="600"
         Background="#F0F0F0">
     <Grid >

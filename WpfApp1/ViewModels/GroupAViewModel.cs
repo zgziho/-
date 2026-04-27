@@ -18,9 +18,5 @@ namespace WpfApp1.ViewModels
         // 积分系数
         [ObservableProperty]
         private string _ki = "";
-
-        // 转矩环频带
-        [ObservableProperty]
-        private string _torqueBand = "";
     }
 }

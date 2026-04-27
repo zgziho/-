@@ -1,4 +1,4 @@
-<Window x:Class="WpfApp1.MainWindow"
+   <Window x:Class="WpfApp1.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -8,7 +8,7 @@
         xmlns:vm="clr-namespace:WpfApp1.ViewModels"
         mc:Ignorable="d"
         WindowStartupLocation="CenterScreen" 
-        Title="上位机" Height="800" Width="1100"
+        Title="上位机" Height="800" Width="1155"
         Background="#F0F0F0"
         ResizeMode="CanResizeWithGrip">
     <Window.Resources>
@@ -42,53 +42,33 @@
                             <RowDefinition/>
                             <RowDefinition/>
                             <RowDefinition/>
-                            <RowDefinition/>
                         </Grid.RowDefinitions>
 
-                        <Label Grid.Column="0" Grid.Row="0" Content="DKp:"  VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding Dkp}" 
-                                 Style="{StaticResource ParameterTextBoxStyle}"
-                                 Tag="Dkp"
-                                 IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
-                                 KeyDown="ParameterTextBox_KeyDown"
-                                 LostFocus="ParameterTextBox_LostFocus"/>
-
-                        <Label Grid.Column="0" Grid.Row="1" Content="QKp:"  VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding Qkp}" 
+                        <Label Grid.Column="0" Grid.Row="0" Content="QKp:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding Qkp}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="Qkp"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
-                        <Label Grid.Column="0" Grid.Row="2" Content="Ki:"  VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding Ki}" 
+                        <Label Grid.Column="0" Grid.Row="1" Content="Ki:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding Ki}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
-                                 Tag="Ki"
+                                 Tag="CurKi"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
-                        <Label Grid.Column="0" Grid.Row="3" Content="转矩环频带:"  VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Grid.Row="3" Text="{Binding TorqueBand}" 
-                                 Style="{StaticResource ParameterTextBoxStyle}"
-                                 Tag="TorqueBand"
-                                 IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
-                                 KeyDown="ParameterTextBox_KeyDown"
-                                 LostFocus="ParameterTextBox_LostFocus"/>
-
-                        <Label Grid.Column="0" Grid.Row="4" Content="电流给定:" VerticalAlignment="Center"/>
-
-                        <TextBox Grid.Column="1" Grid.Row="4"
+                        <Label Grid.Column="0" Grid.Row="2" Content="电流给定:" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="2"
                                  Text="{Binding DataContext.CurrentSetpointValue, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=Explicit}"
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="电流给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="SetpointTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="SetpointTextBox_MouseLeftButtonDown"
                                  KeyDown="SetpointTextBox_KeyDown"
                                  LostFocus="SetpointTextBox_LostFocus"/>
                     </Grid>
@@ -114,18 +94,18 @@
                         <Label Grid.Column="0" Grid.Row="0" Content="Kp:"  VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding Kp}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
-                                 Tag="Kp"
+                                 Tag="SpeedKp"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
                         <Label Grid.Column="0" Grid.Row="1" Content="Ki:"  VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding Ki}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
-                                 Tag="Ki"
+                                 Tag="SpeedKi"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
@@ -134,7 +114,7 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="Tff"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
@@ -143,7 +123,7 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="SpeedBand"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
@@ -153,7 +133,7 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="速度给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="SetpointTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="SetpointTextBox_MouseLeftButtonDown"
                                  KeyDown="SetpointTextBox_KeyDown"
                                  LostFocus="SetpointTextBox_LostFocus"/>
                     </Grid>
@@ -179,9 +159,9 @@
                         <Label Grid.Column="0" Grid.Row="0" Content="Kp:"  VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1" Grid.Row="0" Text="{Binding Kp}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
-                                 Tag="Kp"
+                                 Tag="PosKp"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
@@ -190,7 +170,7 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="Vff"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
 
@@ -205,11 +185,9 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="位置给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="SetpointTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="SetpointTextBox_MouseLeftButtonDown"
                                  KeyDown="SetpointTextBox_KeyDown"
                                  LostFocus="SetpointTextBox_LostFocus"/>
-
-
                     </Grid>
                 </GroupBox>
             </DataTemplate>
@@ -232,7 +210,7 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="占空比给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
                         <Label Content="%" Grid.Column="2" Grid.Row="0" VerticalAlignment="Center"/>
@@ -242,7 +220,7 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="旋转频率"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
                         <Label Content="Hz" Grid.Column="2" Grid.Row="1" VerticalAlignment="Center"/>
@@ -272,41 +250,139 @@
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="旋转频率给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
-                        <Label Grid.Column="2" Grid.Row="0" Content="%"  VerticalAlignment="Center"/>
+                        <Label Grid.Column="2" Grid.Row="0" Content=""  VerticalAlignment="Center"/>
 
                         <Label Grid.Column="0" Grid.Row="1" Content="电流比率给定:"  VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1" Grid.Row="1" Text="{Binding CurrentRatio}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="电流比率给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
-                        <Label Grid.Column="2" Grid.Row="1" Content="%"  VerticalAlignment="Center"/>
+                        <Label Grid.Column="2" Grid.Row="1" Content=""  VerticalAlignment="Center"/>
 
-                        <Label Grid.Column="0" Grid.Row="2" Content="电流数字给定:" VerticalAlignment="Center"/>
+                        <Label Grid.Column="0" Grid.Row="2" Content="电流有效值给定:" VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1" Grid.Row="2" Text="{Binding CurrentDigitalRef}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
-                                 Tag="电流数字给定"
+                                 Tag="电流有效值给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
-                        <Label Grid.Column="2" Grid.Row="2" Content="%"  VerticalAlignment="Center"/>
+                        <Label Grid.Column="2" Grid.Row="2" Content=""  VerticalAlignment="Center"/>
 
                         <Label Grid.Column="0" Grid.Row="3" Content="电流峰值给定:"  VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1" Grid.Row="3" Text="{Binding CurrentPeak}" 
                                  Style="{StaticResource ParameterTextBoxStyle}"
                                  Tag="电流峰值给定"
                                  IsReadOnly="True"
-                                 MouseDoubleClick="ParameterTextBox_MouseDoubleClick"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
                                  KeyDown="ParameterTextBox_KeyDown"
                                  LostFocus="ParameterTextBox_LostFocus"/>
-                        <Label Grid.Column="2" Grid.Row="3" Content="%" VerticalAlignment="Center"/>
+                        <Label Grid.Column="2" Grid.Row="3" Content="" VerticalAlignment="Center"/>
 
+
+                    </Grid>
+                </GroupBox>
+            </DataTemplate>
+
+            <!-- 自学习模板 -->
+            <DataTemplate DataType="{x:Type vm:GroupFViewModel}">
+                <GroupBox Header="自学习" Height="auto">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Column="0" Grid.Row="0" Content="当前状态:" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0"
+                                 Text="{Binding DataContext.CurrentSetpointValue, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=Explicit}"
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 IsReadOnly="True"/>
+
+                    </Grid>
+                </GroupBox>
+            </DataTemplate>
+
+            <!-- 过流测试模板 -->
+            <DataTemplate DataType="{x:Type vm:GroupGViewModel}">
+                <GroupBox Header="过流测试" Height="auto">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="auto"/>
+                            <RowDefinition Height="auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Label Content="占空比给定：" Grid.Column="0" Grid.Row="0" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="占空比给定"
+                                 IsReadOnly="True"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Content="%" Grid.Column="2" Grid.Row="0" VerticalAlignment="Center"/>
+
+                        <Label Content="旋转频率：" Grid.Column="0" Grid.Row="1" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="旋转频率"
+                                 IsReadOnly="True"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Content="Hz" Grid.Column="2" Grid.Row="1" VerticalAlignment="Center"/>
+
+                    </Grid>
+                </GroupBox>
+            </DataTemplate>
+
+            <!-- 转矩环频带模板 -->
+            <DataTemplate DataType="{x:Type vm:GroupHViewModel}">
+                <GroupBox Header="转矩环频带" Height="auto">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto"/>
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="auto"/>
+                            <RowDefinition Height="auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Column="0" Grid.Row="0" Content="电流给定:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="0" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="电流给定"
+                                 IsReadOnly="True"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Grid.Column="2" Grid.Row="0" Content=""  VerticalAlignment="Center"/>
+
+                        <Label Grid.Column="0" Grid.Row="1" Content="信号频率:"  VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Grid.Row="1" 
+                                 Style="{StaticResource ParameterTextBoxStyle}"
+                                 Tag="旋转频率给定"
+                                 IsReadOnly="True"
+                                 PreviewMouseLeftButtonDown="ParameterTextBox_MouseLeftButtonDown"
+                                 KeyDown="ParameterTextBox_KeyDown"
+                                 LostFocus="ParameterTextBox_LostFocus"/>
+                        <Label Grid.Column="2" Grid.Row="1" Content="Hz"  VerticalAlignment="Center"/>
 
                     </Grid>
                 </GroupBox>
@@ -327,18 +403,18 @@
 
         <StackPanel Grid.Row="0" VerticalAlignment="Top">
             <Menu Height="30" Background="#E0E0E0">
-                <MenuItem Header="文件" FontSize="14">
-                    <MenuItem Header="连接设备" FontSize="12">
-                        <MenuItem Header="串口连接" Command="{Binding OpenSerialPortCommand}" ></MenuItem>
-                        <MenuItem Header="其他连接" Command="{Binding OpenOtherConnectionCommand}" ></MenuItem>
-                    </MenuItem>
+                
+                <MenuItem Header="连接设备" FontSize="14">
+                    <MenuItem Header="串口连接" Command="{Binding OpenSerialPortCommand}" ></MenuItem>
+                    <MenuItem Header="CAN连接" Command="{Binding OpenOtherConnectionCommand}" ></MenuItem>
+                </MenuItem>
 
-                    <MenuItem Header="参数表" Command="{Binding OpenExcelCommand}" FontSize="12"/>
+                <MenuItem Header="参数表" Command="{Binding OpenExcelCommand}" FontSize="14">
                 </MenuItem>
-                <MenuItem Header="驱动器" FontSize="14">
+                
+                <MenuItem Header="固件升级" FontSize="14" Command="{Binding OpenFirmwareUpdateCommand}">
                 </MenuItem>
-                <MenuItem Header="工具" FontSize="14">
-                </MenuItem>
+                
                 <MenuItem Header="帮助" FontSize="14">
                 </MenuItem>
             </Menu>
@@ -373,31 +449,41 @@
                             </StackPanel>
                             
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="5 0 5 10" Orientation="Horizontal">
-                                <Label Content="采样时间:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <!--<Label Content="采样时间:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 <ComboBox  >
                                     <ComboBoxItem Content="2.56s" IsSelected="True"></ComboBoxItem>
+                                </ComboBox>-->
+
+                                <Label Content="水平档位:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="HorizontalRangeComboBox" SelectionChanged="HorizontalRangeComboBox_SelectionChanged" Margin="0 5 0 5">
+                                    <ComboBoxItem Content="100点" Tag="100"></ComboBoxItem>
+                                    <ComboBoxItem Content="200点" Tag="200"></ComboBoxItem>
+                                    <ComboBoxItem Content="300点" Tag="300" IsSelected="True"></ComboBoxItem>
+                                    <ComboBoxItem Content="500点" Tag="500"></ComboBoxItem>
+                                    <ComboBoxItem Content="1000点" Tag="1000"></ComboBoxItem>
+                                    <ComboBoxItem Content="2000点" Tag="2000"></ComboBoxItem>
+                                    <ComboBoxItem Content="5000点" Tag="5000"></ComboBoxItem>
+                                    <ComboBoxItem Content="10000点" Tag="10000"></ComboBoxItem>
+                                    <ComboBoxItem Content="20000点" Tag="20000"></ComboBoxItem>
                                 </ComboBox>
 
-
-                                <Label Content="触发方式:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <!--<Label Content="触发方式:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 <ComboBox >
                                     <ComboBoxItem Content="立即" IsSelected="True"></ComboBoxItem>
                                 </ComboBox>
                                 <CheckBox Margin="5 5 0 5" VerticalAlignment="Center"/>
                                 <Label Content="持续"/>
 
-
                                 <Label Content="触发源:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 <ComboBox  >
                                     <ComboBoxItem Content="速度给定" IsSelected="True"></ComboBoxItem>
                                 </ComboBox>
 
-
                                 <Label Content="触发水平:" Margin="5 0 0 0 "  HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 <ComboBox >
                                     <ComboBoxItem Content="0" IsSelected="True"></ComboBoxItem>
                                 </ComboBox>
-                                <Label Content="rpm"/>
+                                <Label Content="rpm"/>-->
 
                                 <Button Content="开始" Width="80" Height="30" Margin="5" Click="Button_Click" />
 
@@ -441,8 +527,10 @@
                                 <Label Content="Hz"/>
                             </StackPanel>
 
-                          
-                            
+                            <StackPanel Orientation="Horizontal" Margin="5">
+                                <Button Content="保存" Command="{Binding SaveCommand}"/>
+                            </StackPanel>
+
                         </StackPanel>
                         <Grid Grid.Column="1">
                             <Grid.ColumnDefinitions>
@@ -477,7 +565,7 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="1" Orientation="Horizontal">
-                                    <Button Content="清除故障"  Margin="10 30 10 30" Width="70"/>
+                                    <Button Content="清除故障"  Margin="10 30 10 30" Width="70" Command="{Binding ClearFaultCommand}"/>
                                     <Button Content="系统复位"  Margin="5 30 5 30" Width="70"/>
                                     <Button Content="位置清零"  Margin="10 30 10 30" Width="70"/>
                                 </StackPanel>

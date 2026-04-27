@@ -643,7 +643,7 @@ public sealed class OtherConnectionService
                     throw new InvalidOperationException($"发送请求失败: {sendResult.Message}");
                 }
                 // 等待读取响应或超时
-                var timeoutTask = Task.Delay(200);
+                var timeoutTask = Task.Delay(500);
                 var readTask = Task.Run(() => ReceiveCanResponse(channelIndex));
 
                 var finished = await Task.WhenAny(readTask, timeoutTask).ConfigureAwait(false);
@@ -653,7 +653,7 @@ public sealed class OtherConnectionService
                     try
                     {
                         var response = await readTask.ConfigureAwait(false);
-
+                        Debug.WriteLine($"设备响应数据: {ConvertToHexString(response)}");
                         return response ?? Array.Empty<byte>();
                     }
                     catch (Exception ex)
@@ -661,6 +661,10 @@ public sealed class OtherConnectionService
                         throw new InvalidOperationException("接收响应时发生错误", ex);
                     }
                 }
+            }
+            catch(Exception)
+            {
+                
             }
             finally
             {
@@ -683,15 +687,13 @@ public sealed class OtherConnectionService
     /// 接收CAN响应
     /// </summary>
     /// <param name="channelIndex">通道索引</param>
-    /// <param name="timeoutMilliseconds">超时时间（毫秒）</param>
     /// <returns>响应数据</returns>
-    private byte[] ReceiveCanResponse(int channelIndex)
+    public byte[] ReceiveCanResponse(int channelIndex)
     {
-        
         var currentChannelHandle = _channelHandles[channelIndex];
         var startTime = DateTime.UtcNow;
 
-        while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(200))
+        while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(500))
         {
             var datalen = Method.ZCAN_GetReceiveNum(currentChannelHandle, 0);
             var fddatalen = Method.ZCAN_GetReceiveNum(currentChannelHandle, 1);
@@ -699,6 +701,7 @@ public sealed class OtherConnectionService
             // 尝试接收标准CAN消息
             if (datalen > 0)
             {
+
                 int size = Marshal.SizeOf(typeof(ZCAN_Receive_Data));
                 var pointer = Marshal.AllocHGlobal((int)datalen * size);
                 try
@@ -734,6 +737,7 @@ public sealed class OtherConnectionService
             }
             if (fddatalen > 0)
             {
+
                 int size = Marshal.SizeOf(typeof(ZCAN_ReceiveFD_Data));
                 var fdPointer = Marshal.AllocHGlobal((int)fddatalen * size);
                 try
@@ -743,10 +747,26 @@ public sealed class OtherConnectionService
                     {
                         for (uint i = 0; i < received; i++)
                         {
+                            int len;
+                            string hexStr;
+                            int dataLength;
                             var data = Marshal.PtrToStructure<ZCAN_ReceiveFD_Data>(new IntPtr(fdPointer.ToInt64() + i * size));
-                            string hexStr = data.frame.data[3].ToString("X2");
-                            int dataLength = Convert.ToInt32(hexStr, 16);
-                            var len = dataLength + 4;
+                            
+                            if (data.frame.data[0] == 0x3E)
+                            {
+                                var payload = new byte[11];
+                                Array.Copy(data.frame.data,0, payload,0, 11);
+                                return payload;
+                            }
+
+                            if (data.frame.data[0] == 0x80)
+                            {
+                                Debug.WriteLine("设备返回错误码：0x80");
+                                return Array.Empty<byte>();
+                            }
+                             hexStr = data.frame.data[3].ToString("X2");
+                             dataLength = Convert.ToInt32(hexStr, 16);
+                            len = dataLength + 4;
 
                             if (len > 0 && data.frame.data != null)
                             {
@@ -879,12 +899,14 @@ public sealed class OtherConnectionService
             return false;
         }
 
+      
+
         // 检查命令码是否为0x60
         if (payload[0] != 0x60)
         {
             return false;
         }
-
+        
         // 计算数据长度
         int dataLength = payload[3];
         
@@ -1055,12 +1077,82 @@ public sealed class OtherConnectionService
             return OtherConnectionResult.Fail("发送数据长度超过CANFD帧限制");
         }
 
-        if (payload.Length <= CanMaxDlen)
-        {
-            return SendCanMessage(selectedChannelIndex, payload);
-        }
+        //if (payload.Length <= CanMaxDlen)
+        //{
+        //    return SendCanMessage(selectedChannelIndex, payload);
+        //}
 
         return SendCanFdMessage(selectedChannelIndex, payload);
+    }
+
+    /// <summary>
+    /// 发送CAN消息（指定帧ID）
+    /// </summary>
+    /// <param name="selectedChannelIndex">通道索引</param>
+    /// <param name="payload">消息数据</param>
+    /// <param name="messageId">帧ID</param>
+    /// <returns>操作结果</returns>
+    public OtherConnectionResult SendCanMessageWithId(int selectedChannelIndex, byte[] payload, uint messageId)
+    {
+        if (!IsValidChannelIndex(selectedChannelIndex))
+        {
+            return OtherConnectionResult.Fail("无效的通道索引");
+        }
+
+        if (!_channelStarted[selectedChannelIndex])
+        {
+            return OtherConnectionResult.Fail("请先启动CAN");
+        }
+
+        if (payload.Length == 0)
+        {
+            return OtherConnectionResult.Fail("发送数据为空");
+        }
+
+        if (payload.Length > CanFdMaxDlen)
+        {
+            return OtherConnectionResult.Fail("发送数据长度超过CANFD帧限制");
+        }
+
+
+        const int frameTypeIndex = 0;
+        const int sendTypeIndex = 0;
+
+        var currentChannelHandle = _channelHandles[selectedChannelIndex];
+        uint result;
+        var canFdData = new ZCAN_TransmitFD_Data
+        {
+            frame =
+            {
+                can_id = MakeCanId(messageId, frameTypeIndex, 0, 0),
+                data = new byte[CanFdMaxDlen]
+            },
+            transmit_type = (uint)sendTypeIndex
+        };
+
+        Array.Copy(payload, canFdData.frame.data, payload.Length);
+        //canFdData.frame.len = (byte)payload.Length;
+        canFdData.frame.len = AdjustCanFdLength(payload.Length); ;
+
+        var pointer = Marshal.AllocHGlobal(Marshal.SizeOf(canFdData));
+        try
+        {
+            Marshal.StructureToPtr(canFdData, pointer, false);
+            result = Method.ZCAN_TransmitFD(currentChannelHandle, pointer, 1);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pointer);
+        }
+
+        if (result == 1)
+        {
+            LastSentPayloadHex = ConvertToHexString(payload);
+            return OtherConnectionResult.Success();
+        }
+
+        var errorMessage = ReadChannelError(selectedChannelIndex) ?? "发送数据失败";
+        return OtherConnectionResult.Fail("发送数据失败", errorMessage);
     }
 
     private OtherConnectionResult SendCanMessage(int selectedChannelIndex, byte[] payload)
@@ -1072,7 +1164,7 @@ public sealed class OtherConnectionService
         uint result;
         var canData = new ZCAN_Transmit_Data
         { 
-            frame =
+            frame = 
             {
                 can_id = MakeCanId(DefaultMessageId, frameTypeIndex, 0, 0),
                 data = new byte[CanMaxDlen]
@@ -1104,6 +1196,21 @@ public sealed class OtherConnectionService
         return OtherConnectionResult.Fail("发送数据失败", errorMessage);
     }
 
+    // 调整数据长度为 CAN FD 合法长度
+    byte AdjustCanFdLength(int actualLength)
+    {
+        int[] validLengths = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64 };
+        foreach (int length in validLengths)
+        {
+            if (length >= actualLength)
+                return (byte)length;
+        }
+        return (byte)64; // 默认使用最大长度
+    }
+
+ 
+
+
     private OtherConnectionResult SendCanFdMessage(int selectedChannelIndex, byte[] payload)
     {
         const int frameTypeIndex = 0;
@@ -1122,7 +1229,10 @@ public sealed class OtherConnectionService
         };
 
         Array.Copy(payload, canFdData.frame.data, payload.Length);
-        canFdData.frame.len = (byte)payload.Length;
+
+        canFdData.frame.len = AdjustCanFdLength(payload.Length);
+
+        Debug.WriteLine($"发送的数据: {ConvertToHexString(payload)}");
 
         var pointer = Marshal.AllocHGlobal(Marshal.SizeOf(canFdData));
         try
@@ -1141,7 +1251,7 @@ public sealed class OtherConnectionService
             return OtherConnectionResult.Success();
         }
 
-        var errorMessage = ReadChannelError(selectedChannelIndex) ?? "发送数据失败";
+        var errorMessage = ReadChannelError(selectedChannelIndex) ?? "【日志】发送数据失败";
         return OtherConnectionResult.Fail("发送数据失败", errorMessage);
     }
 

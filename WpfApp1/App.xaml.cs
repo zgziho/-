@@ -41,6 +41,7 @@ namespace WpfApp1
             services.AddSingleton<SerialPortViewModel>();
             services.AddSingleton<OtherConnectionViewModel>();
             services.AddSingleton<ExcelViewModel>();
+            services.AddSingleton<FirmwareUpdateViewModel>();
             services.AddSingleton<MainWindowViewModel>();
             // 窗口弹出服务
             services.AddSingleton<IDialogService ,DialogService>();

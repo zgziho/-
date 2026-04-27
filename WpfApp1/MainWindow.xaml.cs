@@ -14,6 +14,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Controls.Primitives;
+using System.Diagnostics;
+using System.Data;
 
 namespace WpfApp1
 {
@@ -91,6 +94,16 @@ namespace WpfApp1
         private readonly List<double> _postTriggerBuffer;
 
         /// <summary>
+        /// 历史数据缓冲区：保存最近的采样数据，用于预触发缓冲区未满时填充
+        /// </summary>
+        private readonly Queue<double> _historyBuffer;
+
+        /// <summary>
+        /// 最大历史缓冲区大小（防止内存溢出）
+        /// </summary>
+        private const int MAX_HISTORY_SIZE = 10000;
+
+        /// <summary>
         /// 还需采集的后触发样本数量
         /// </summary>
         private int _postTriggerNeeded;
@@ -153,12 +166,12 @@ namespace WpfApp1
             // 初始化缓冲区，预分配容量以提高性能
             _preTriggerBuffer = new Queue<double>(_preTriggerPoints + 1);
             _postTriggerBuffer = new List<double>(_totalDisplayPoints);
+            _historyBuffer = new Queue<double>(MAX_HISTORY_SIZE);
         }
 
         #endregion
 
         #region 公共方法
-
         /// <summary>
         /// 处理批量采样数据
         /// </summary>
@@ -175,7 +188,6 @@ namespace WpfApp1
                 ProcessSingleSample(sample);
             }
         }
-
         /// <summary>
         /// 通知批次处理结束（用于Holdoff状态计数）
         /// </summary>
@@ -225,7 +237,7 @@ namespace WpfApp1
                     HandleCapturingState(sample);
                     break;
                 case AcquisitionState.Holdoff:
-                    UpdatePreTriggerBuffer(sample);  // Holdoff期间仍更新预触发缓冲
+                    UpdatePreTriggerBuffer(sample);  
                     break;
             }
             _lastSample = sample;  // 保存当前样本供下次边缘检测使用
@@ -246,12 +258,10 @@ namespace WpfApp1
                 // 触发条件满足，切换到捕获状态
                 _state = AcquisitionState.CapturingPostTrigger;
                 _postTriggerBuffer.Clear();
-                _postTriggerBuffer.Add(sample);  // 触发点加入后触发缓冲区
 
-                //_postTriggerNeeded = _totalDisplayPoints - _preTriggerBuffer.Count - 1;
 
                 // 计算还需采集的后触发点数，确保至少采集一定数量
-                _postTriggerNeeded = Math.Max(_totalDisplayPoints - _preTriggerBuffer.Count - 1, _preTriggerPoints);
+                _postTriggerNeeded = _totalDisplayPoints - _preTriggerBuffer.Count;
 
                 // 如果预触发缓冲已满，立即完成采集
                 if (_postTriggerNeeded <= 0)
@@ -268,8 +278,6 @@ namespace WpfApp1
             _postTriggerBuffer.Add(sample);
             _postTriggerNeeded--;
 
-            UpdatePreTriggerBuffer(sample);  // 继续更新预触发缓冲
-
             // 后触发数据采集完成
             if (_postTriggerNeeded <= 0)
                 CompleteCapture();
@@ -282,9 +290,15 @@ namespace WpfApp1
         private void UpdatePreTriggerBuffer(double sample)
         {
             _preTriggerBuffer.Enqueue(sample);
-            // 保持缓冲区大小恒定，超出时自动丢弃最旧的数据
+            _historyBuffer.Enqueue(sample);
+            
+            // 保持预触发缓冲区大小恒定，超出时自动丢弃最旧的数据
             if (_preTriggerBuffer.Count > _preTriggerPoints)
                 _preTriggerBuffer.Dequeue();
+            
+            // 保持历史缓冲区大小，超出时自动丢弃最旧的数据
+            if (_historyBuffer.Count > MAX_HISTORY_SIZE)
+                _historyBuffer.Dequeue();
         }
 
         /// <summary>
@@ -296,11 +310,36 @@ namespace WpfApp1
             double[] capturedWindow = new double[_totalDisplayPoints];
             int index = 0;
 
-            // 1. 复制预触发数据
-            foreach (var val in _preTriggerBuffer)
-                capturedWindow[index++] = val;
+            // 确保预触发部分有 _preTriggerPoints 个点
+            List<double> preTriggerData = new List<double>(_preTriggerBuffer);
+            
+            // 如果预触发缓冲区未满，从历史数据中填充
+            if (preTriggerData.Count < _preTriggerPoints && _historyBuffer.Count > 0)
+            {
+                int needed = _preTriggerPoints - preTriggerData.Count;
+                List<double> historyData = _historyBuffer.ToList();
+                
+                // 从历史数据中获取最旧的数据来填充
+                for (int i = Math.Max(0, historyData.Count - needed); i < historyData.Count; i++)
+                {
+                    preTriggerData.Insert(0, historyData[i]);
+                    if (preTriggerData.Count >= _preTriggerPoints)
+                        break;
+                }
+            }
+            
+            // 确保预触发数据不超过 _preTriggerPoints
+            if (preTriggerData.Count > _preTriggerPoints)
+            {
+                preTriggerData = preTriggerData.GetRange(preTriggerData.Count - _preTriggerPoints, _preTriggerPoints);
+            }
+            
+            // 复制预触发数据
+            foreach (var val in preTriggerData)
+                if (index < _totalDisplayPoints)
+                    capturedWindow[index++] = val;
 
-            // 2. 复制后触发数据（不超过总点数）
+            // 复制后触发数据
             foreach (var val in _postTriggerBuffer)
             {
                 if (index < _totalDisplayPoints)
@@ -309,16 +348,16 @@ namespace WpfApp1
                     break;
             }
 
-            // 3. 不足部分填0
+            // 不足部分填0
             while (index < _totalDisplayPoints)
                 capturedWindow[index++] = 0;
 
             // 触发事件通知外部
             CaptureCompleted?.Invoke(capturedWindow);
 
-            // 进入Holdoff状态防止重复触发
-            _state = AcquisitionState.Holdoff;
-            _holdoffCounter = HOLDOFF_BATCHES;
+            // 重置状态
+            _state = AcquisitionState.WaitingForTrigger;
+            // 注意：不要清空预触发缓冲区，保持环形缓冲区的连续性
         }
         #endregion
     }
@@ -361,10 +400,59 @@ namespace WpfApp1
 
         private readonly Dictionary<int, TriggeredAcquisitionManager> _triggerManagers = new();
 
-        private const int BATCH_POINT_COUNT = 300;
-        private const int DISPLAY_WINDOW_SIZE = 300;
-        private const int PRE_TRIGGER_POINTS = 50;
+        private int _displayWindowSize = 300;
+        private const int PRE_TRIGGER_POINTS = 500;
         private const double DEFAULT_TRIGGER_LEVEL = 5.0;
+
+        /// <summary>
+        /// 当前显示窗口大小（水平档位）
+        /// </summary>
+        public int DisplayWindowSize
+        {
+            get => _displayWindowSize;
+            set
+            {
+                if (_displayWindowSize != value)
+                {
+                    _displayWindowSize = value;
+                    ReinitializeTriggerManagers();
+                    RefreshOscilloscopeDisplay();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 重新初始化触发采集管理器，使用新的显示窗口大小
+        /// </summary>
+        private void ReinitializeTriggerManagers()
+        {
+            _triggerManagers.Clear();
+            for (int ch = 1; ch <= 4; ch++)
+            {
+                // 根据显示窗口大小计算合适的预触发区大小
+                // 预触发区大小为显示窗口的1/3，最小30点，最大500点
+                int preTriggerPoints = Math.Min(500, Math.Max(30, _displayWindowSize / 3));
+                
+                var manager = new TriggeredAcquisitionManager(
+                    preTriggerPoints,
+                    _displayWindowSize,
+                    DEFAULT_TRIGGER_LEVEL);
+
+                int channel = ch;
+                manager.CaptureCompleted += (capturedData) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (_isOscilloscopeRunning)
+                        {
+                            RefreshOscilloscopeDisplay(capturedData, channel);
+                        }
+                    });
+                };
+
+                _triggerManagers[ch] = manager;
+            }
+        }
 
         #region 测试数据生成器字段
         private System.Windows.Threading.DispatcherTimer? _testDataTimer;
@@ -400,9 +488,13 @@ namespace WpfApp1
 
             for (int ch = 1; ch <= 4; ch++)
             {
+                // 根据显示窗口大小计算合适的预触发区大小
+                // 预触发区大小为显示窗口的1/3，最小30点，最大500点
+                int preTriggerPoints = Math.Min(500, Math.Max(30, _displayWindowSize / 3));
+                
                 var manager = new TriggeredAcquisitionManager(
-                    PRE_TRIGGER_POINTS,
-                    DISPLAY_WINDOW_SIZE,
+                    preTriggerPoints,
+                    _displayWindowSize,
                     DEFAULT_TRIGGER_LEVEL);
 
                 int channel = ch;
@@ -410,31 +502,9 @@ namespace WpfApp1
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        var buffer = _historyBuffers[channel];
-
-                        // 将捕获到的完整窗口追加到历史缓冲区（不清空）
-                        buffer.AddRange(capturedData);
-
-                        // 确保所有通道缓冲区大小一致（关键修复）
-                        SyncAllChannelBuffers();
-
-                        // 限制缓冲区大小
-                        if (buffer.Count > MAX_BUFFER_SIZE)
-                        {
-                            int removeCount = buffer.Count - MAX_BUFFER_SIZE;
-                            
-                            // 所有通道同步删除相同数量的数据
-                            foreach (var kvp in _historyBuffers)
-                            {
-                                kvp.Value.RemoveRange(0, removeCount);
-                            }
-                            
-                            _bufferStartIndex += removeCount;
-                        }
-
                         if (_isOscilloscopeRunning)
                         {
-                            RefreshOscilloscopeDisplay();
+                            RefreshOscilloscopeDisplay(capturedData, channel);
                         }
                     });
                 };
@@ -446,12 +516,12 @@ namespace WpfApp1
             _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(50);
             _oscilloscopeTimer.Tick += OscilloscopeTimer_Tick;
 
-            #region 测试数据生成器 - 每毫秒生成50个数据写入环形缓冲区
-            _testDataTimer = new System.Windows.Threading.DispatcherTimer();
-            _testDataTimer.Interval = TimeSpan.FromMilliseconds(1);
-            _testDataTimer.Tick += TestDataTimer_Tick;
-            _testDataTimer.Start();
-            #endregion
+            //#region 测试数据生成器 - 每毫秒生成50个数据写入环形缓冲区
+            //_testDataTimer = new System.Windows.Threading.DispatcherTimer();
+            //_testDataTimer.Interval = TimeSpan.FromMilliseconds(1);
+            //_testDataTimer.Tick += TestDataTimer_Tick;
+            //_testDataTimer.Start();
+            //#endregion
         }
 
         private void InitializeScottPlot()
@@ -459,7 +529,7 @@ namespace WpfApp1
             if (MainPlot != null)
             {
                 MainPlot.Plot.Clear();
-                MainPlot.Plot.Axes.SetLimitsX(0, DISPLAY_WINDOW_SIZE);
+                MainPlot.Plot.Axes.SetLimitsX(0, _displayWindowSize);
                 MainPlot.Plot.Legend.FontName = "微软雅黑";
                 MainPlot.Plot.FigureBackground.Color = new Color("#F0F0F0");
                 MainPlot.Plot.DataBackground.Color = new Color("#F0F0F0");
@@ -479,23 +549,95 @@ namespace WpfApp1
             for (int channel = 1; channel <= 4; channel++)
             {
                 if (IsChannelSelected(vm, channel))
-                {
-                    //var data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
-                    // 从环形缓冲区读取数据（测试数据由 TestDataTimer 定时写入）
-                    double[] data = viewModel.GetOscilloscopeData(channel, BATCH_POINT_COUNT);
+                {//数据的获取
+                    double[] data = viewModel.GetOscilloscopeData(channel, _displayWindowSize);
 
+                    if (data.Length == 0) return;
 
-                    if (data == null) return;
                     _triggerManagers[channel].ProcessDataBatch(data);
+                
+                    // 直接将原生数据添加到历史缓冲区
+                    var buffer = _historyBuffers[channel];
+                    buffer.AddRange(data);
+                    var y = data[0];
+                    foreach(var i in data)
+                    {
+                        if (y != i)
+                        {
+
+                        }
+                    }
+                    // 确保所有通道缓冲区大小一致
+                    SyncAllChannelBuffers();
+                    
+                    // 限制缓冲区大小
+                    if (buffer.Count > MAX_BUFFER_SIZE)
+                    {
+                        int removeCount = buffer.Count - MAX_BUFFER_SIZE;
+                        
+                        // 所有通道同步删除相同数量的数据
+                        foreach (var kvp in _historyBuffers)
+                        {
+                            kvp.Value.RemoveRange(0, removeCount);
+                        }
+                        
+                        _bufferStartIndex += removeCount;
+                    }
+                    
                 }
             }
 
-            foreach (var manager in _triggerManagers.Values)
-                manager.NotifyBatchEnd();
-
-            RefreshOscilloscopeDisplay();
+            // 移除这里的刷新调用，因为数据捕获完成时会自动刷新
+            // RefreshOscilloscopeDisplay();
         }
 
+
+        /// <summary>
+        /// 快速刷新示波器（仅显示新数据）
+        /// </summary>
+        /// <param name="newData">新捕获的数据</param>
+        /// <param name="channel">通道号</param>
+        private void RefreshOscilloscopeDisplay(double[] newData, int channel)
+        {
+            if (MainPlot == null) return;
+            var vm = DataContext as MainWindowViewModel;
+            if (vm == null) return;
+
+            MainPlot.Plot.Clear();
+            
+            // 只绘制当前通道的新数据
+            if (IsChannelSelected(vm, channel))
+            {
+                // 计算新数据的索引范围
+                long newDataStartIndex = _bufferStartIndex + (_historyBuffers[channel].Count - newData.Length);
+                long newDataEndIndex = _bufferStartIndex + _historyBuffers[channel].Count - 1;
+                
+                double[] xData = new double[newData.Length];
+                for (int i = 0; i < newData.Length; i++)
+                    xData[i] = newDataStartIndex + i;
+                
+                var scatter = MainPlot.Plot.Add.Scatter(xData, newData);
+                scatter.Color = GetChannelColor(channel);
+                scatter.LineWidth = 1;
+                scatter.MarkerSize = 0;
+                
+                // 设置Y轴范围
+                double yMin = newData.Min();
+                double yMax = newData.Max();
+                double yRange = yMax - yMin;
+                double margin = Math.Max(yRange * 0.1, 1.0);
+                MainPlot.Plot.Axes.SetLimitsY(yMin - margin, yMax + margin);
+                
+                // 设置X轴范围
+                MainPlot.Plot.Axes.SetLimitsX(newDataStartIndex, newDataEndIndex + 1);
+            }
+            
+            MainPlot.Refresh();
+        }
+
+        /// <summary>
+        /// 刷新示波器
+        /// </summary>
         private void RefreshOscilloscopeDisplay()
         {
             if (MainPlot == null) return;
@@ -515,13 +657,11 @@ namespace WpfApp1
                     double[] xData = new double[buffer.Count];
                     double[] yData = buffer.ToArray();
                     for (int i = 0; i < buffer.Count; i++)
-                        xData[i] = _bufferStartIndex + i;   // 使用全局索引
-
+                        xData[i] = _bufferStartIndex + i;
                     var scatter = MainPlot.Plot.Add.Scatter(xData, yData);
                     scatter.Color = GetChannelColor(channel);
                     scatter.LineWidth = 1;
                     scatter.MarkerSize = 0;
-
                     allYValues.AddRange(yData);
                 }
             }
@@ -542,12 +682,12 @@ namespace WpfApp1
                 if (firstBuffer != null)
                 {
                     long endIndex = _bufferStartIndex + firstBuffer.Count;
-                    long startIndex = Math.Max(_bufferStartIndex, endIndex - DISPLAY_WINDOW_SIZE);
+                    long startIndex = Math.Max(_bufferStartIndex, endIndex - _displayWindowSize);
                     MainPlot.Plot.Axes.SetLimitsX(startIndex, endIndex);
                 }
             }
             // 停止时完全不设置X轴范围，让ScottPlot保持当前视图
-
+            //Transparent
             MainPlot.Refresh();
         }
 
@@ -654,7 +794,8 @@ namespace WpfApp1
         {
             _isOscilloscopeRunning = false;
             _oscilloscopeTimer.Stop();
-            // 停止时不修改缓冲区，不重置视图，用户可自由滑动
+            // 停止时刷新完整历史数据
+            RefreshOscilloscopeDisplay();
         }
 
         #endregion
@@ -663,6 +804,17 @@ namespace WpfApp1
         {
             Loaded -= MainWindow_AutoOpenSerial;
             viewModel.OpenSerialPortCommand.Execute(null);
+        }
+
+        private void SetpointTextBox_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is TextBox textBox)
+            {
+                textBox.IsReadOnly = false;
+                textBox.Focus();
+                textBox.SelectAll();
+                e.Handled = true;
+            }
         }
 
         private void SetpointTextBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -691,6 +843,17 @@ namespace WpfApp1
         {
             if (sender is TextBox textBox)
                 textBox.IsReadOnly = true;
+        }
+
+        private void ParameterTextBox_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is TextBox textBox)
+            {
+                textBox.IsReadOnly = false;
+                textBox.Focus();
+                textBox.SelectAll();
+                e.Handled = true;
+            }
         }
 
         private void ParameterTextBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -759,7 +922,7 @@ namespace WpfApp1
             if (!viewModel.IsEnableLatched) return;
             await viewModel.JogSingleAsync(true);
         }
-
+                                          
         private async void ReverseJog_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (viewModel.IsEnableLatched) return;
@@ -867,6 +1030,17 @@ namespace WpfApp1
             {
                 StartOscilloscope();
                 ((Button)sender).Content = "停止";
+            }
+        }
+
+        private void HorizontalRangeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ComboBox comboBox && comboBox.SelectedItem is ComboBoxItem selectedItem)
+            {
+                if (int.TryParse(selectedItem.Tag?.ToString(), out int newWindowSize))
+                {
+                    DisplayWindowSize = newWindowSize;
+                }
             }
         }
     }
