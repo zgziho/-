@@ -34,7 +34,7 @@ public sealed class OtherConnectionService
         get => _writeCooldownMilliseconds;
         set => _writeCooldownMilliseconds = value < 0 ? 0 : value;
     }
- 
+
     /// <summary>
     /// 启动被动接收循环
     /// </summary>
@@ -53,7 +53,7 @@ public sealed class OtherConnectionService
                 while (!token.IsCancellationRequested)
                 {
                     // 遍历所有通道尝试接收数据
-                    for (int ch = 0; ch < ChannelCount-1; ch++)
+                    for (int ch = 0; ch < ChannelCount; ch++)
                     {
                         if (token.IsCancellationRequested)
                             break;
@@ -62,7 +62,6 @@ public sealed class OtherConnectionService
 
                         try
                         {
-                            
                               var  payloads = ReceiveAnyCanResponse(ch);
                             
                             
@@ -70,10 +69,9 @@ public sealed class OtherConnectionService
                             {
                                 foreach (var payload in payloads)
                                 {
+                                    
                                     if (payload != null && payload.Length > 0)
                                     {
-                                        //StoreRawMessage($"通道{ch} 被动接收: {ConvertToHexString(payload)}");
-                                        // 将数据入队，不直接触发事件，避免阻塞接收线程
                                         _frameQueue.Enqueue(payload);
                                     }
                                 }
@@ -107,13 +105,16 @@ public sealed class OtherConnectionService
                        {
                            RealtimeFrameReceived?.Invoke(payload);
                        }
-                       catch { }
+                       catch 
+                       {
+                           Debug.WriteLine("示波器数据处理出现问题");
+                       }
                    }
                }
            }
            catch
            {
-
+               Debug.WriteLine("示波器数据处理出现问题");
            }
        }, token);
     }
@@ -289,8 +290,6 @@ public sealed class OtherConnectionService
     }
 
 
-    //[DllImport("zlgcan.dll", EntryPoint = "ZCAN_ClearBuffer", CallingConvention = CallingConvention.Cdecl)]
-    //public static extern uint ZCAN_ClearBuffer(object obj);
     /// <summary>
     /// 打开设备
     /// </summary>

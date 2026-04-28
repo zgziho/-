@@ -110,11 +110,11 @@ namespace WpfApp1.ViewModels
         [RelayCommand]
         private async Task StartUpdate()
         {
-            //if (string.IsNullOrEmpty(FirmwareFilePath))
-            //{
-            //    MessageBox.Show("请选择固件文件", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-            //    return;
-            //}
+            if (string.IsNullOrEmpty(FirmwareFilePath))
+            {
+                MessageBox.Show("请选择固件文件", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
             StatusMessage = "升级中...";
             ProgressValue = 0;
@@ -125,7 +125,7 @@ namespace WpfApp1.ViewModels
                 //步骤1：向地址0x10CE写0x6688，等待3s
                 ProgressInfo = "准备进入升级模式";
                 await WriteRegister(0x10CE, 0x6688);
-                await Task.Delay(3000);
+                await Task.Delay(5000);
 
                 // 步骤2：向地址0x9002写十个寄存器值为0，等待100ms
                 ProgressInfo = "初始化升级参数";
@@ -242,7 +242,6 @@ namespace WpfApp1.ViewModels
         private async Task WriteMultipleRegisters(int address, byte[] data)
         {
             var payload = _otherConnectionService.BuildWritePayload(address, data);
-            Debug.WriteLine($"写入数据={ConvertToHexString(payload)}");
             var result = _otherConnectionService.SendWriteMessage(payload);
             if (!result.Succeeded)
             {

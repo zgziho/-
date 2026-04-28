@@ -17,6 +17,7 @@ using System.Windows.Input;
 using System.Windows.Controls.Primitives;
 using System.Diagnostics;
 using System.Data;
+using WpfApp1.ViewModels;
 
 namespace WpfApp1
 {
@@ -513,7 +514,7 @@ namespace WpfApp1
             }
 
             _oscilloscopeTimer = new System.Windows.Threading.DispatcherTimer();
-            _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(50);
+            _oscilloscopeTimer.Interval = TimeSpan.FromMilliseconds(5);
             _oscilloscopeTimer.Tick += OscilloscopeTimer_Tick;
 
             //#region 测试数据生成器 - 每毫秒生成50个数据写入环形缓冲区
@@ -538,6 +539,7 @@ namespace WpfApp1
                 MainPlot.Refresh();
             }
         }
+        double y = 0;
 
         private void OscilloscopeTimer_Tick(object? sender, EventArgs e)
         {
@@ -555,40 +557,45 @@ namespace WpfApp1
                     if (data.Length == 0) return;
 
                     _triggerManagers[channel].ProcessDataBatch(data);
-                
+
                     // 直接将原生数据添加到历史缓冲区
                     var buffer = _historyBuffers[channel];
                     buffer.AddRange(data);
-                    var y = data[0];
-                    foreach(var i in data)
+                    for (int i = 0; i < data.Length; i++)
                     {
-                        if (y != i)
+                        if (y == data[i] - 1)
                         {
+                            y = data[i];
+                        }
+                        else
+                        {
+                            Debug.WriteLine($"数据变化：{y}===>{data[i]}");
+                            y = data[i];
+                        }
+                    }
+                        // 确保所有通道缓冲区大小一致
+                        SyncAllChannelBuffers();
 
-                        }
-                    }
-                    // 确保所有通道缓冲区大小一致
-                    SyncAllChannelBuffers();
-                    
-                    // 限制缓冲区大小
-                    if (buffer.Count > MAX_BUFFER_SIZE)
-                    {
-                        int removeCount = buffer.Count - MAX_BUFFER_SIZE;
-                        
-                        // 所有通道同步删除相同数量的数据
-                        foreach (var kvp in _historyBuffers)
+                        // 限制缓冲区大小
+                        if (buffer.Count > MAX_BUFFER_SIZE)
                         {
-                            kvp.Value.RemoveRange(0, removeCount);
+                            int removeCount = buffer.Count - MAX_BUFFER_SIZE;
+
+                            // 所有通道同步删除相同数量的数据
+                            foreach (var kvp in _historyBuffers)
+                            {
+                                kvp.Value.RemoveRange(0, removeCount);
+                            }
+
+                            _bufferStartIndex += removeCount;
                         }
-                        
-                        _bufferStartIndex += removeCount;
-                    }
+
                     
                 }
-            }
 
-            // 移除这里的刷新调用，因为数据捕获完成时会自动刷新
-            // RefreshOscilloscopeDisplay();
+                // 移除这里的刷新调用，因为数据捕获完成时会自动刷新
+                // RefreshOscilloscopeDisplay();
+            }
         }
 
 
@@ -715,44 +722,44 @@ namespace WpfApp1
             }
         }
 
-        // 所有通道共用一个随机数生成器（固定种子，确保噪声模式一致）
-        private readonly Random _sharedRandom = new Random(12345);
+        //// 所有通道共用一个随机数生成器（固定种子，确保噪声模式一致）
+        //private readonly Random _sharedRandom = new Random(12345);
 
-        #region 测试数据生成器 - 每毫秒生成50个数据写入环形缓冲区
-        private void TestDataTimer_Tick(object? sender, EventArgs e)
-        {
-            lock (_testDataLock)
-            {
-                const int POINTS_PER_MS = 50;  // 每毫秒生成50个数据点
-                long currentCounter = _testDataSampleCounter;
+        //#region 测试数据生成器 - 每毫秒生成50个数据写入环形缓冲区
+        //private void TestDataTimer_Tick(object? sender, EventArgs e)
+        //{
+        //    lock (_testDataLock)
+        //    {
+        //        const int POINTS_PER_MS = 50;  // 每毫秒生成50个数据点
+        //        long currentCounter = _testDataSampleCounter;
 
-                for (int channel = 1; channel <= 4; channel++)
-                {
-                    double[] data = new double[POINTS_PER_MS];
-                    double frequency = 0.008;  // 较低频率，方波更宽
-                    double amplitude = 15;      // 更大幅度，正负明显
-                    double phase = (channel - 1) * Math.PI / 4;  // 不同通道相位偏移
+        //        for (int channel = 1; channel <= 4; channel++)
+        //        {
+        //            double[] data = new double[POINTS_PER_MS];
+        //            double frequency = 0.008;  // 较低频率，方波更宽
+        //            double amplitude = 15;      // 更大幅度，正负明显
+        //            double phase = (channel - 1) * Math.PI / 4;  // 不同通道相位偏移
 
-                    for (int i = 0; i < POINTS_PER_MS; i++)
-                    {
-                        long sampleIndex = currentCounter + i;
-                        // 方波生成：正弦值>0时为高电平，否则为低电平
-                        double rawValue = Math.Sin(2 * Math.PI * sampleIndex * frequency + phase);
-                        double squareWave = rawValue > 0 ? amplitude : -amplitude;
-                        // 添加少量噪声模拟真实信号
-                        squareWave += _sharedRandom.NextDouble() * 0.3 - 0.15;
-                        data[i] = squareWave;
-                    }
+        //            for (int i = 0; i < POINTS_PER_MS; i++)
+        //            {
+        //                long sampleIndex = currentCounter + i;
+        //                // 方波生成：正弦值>0时为高电平，否则为低电平
+        //                double rawValue = Math.Sin(2 * Math.PI * sampleIndex * frequency + phase);
+        //                double squareWave = rawValue > 0 ? amplitude : -amplitude;
+        //                // 添加少量噪声模拟真实信号
+        //                squareWave += _sharedRandom.NextDouble() * 0.3 - 0.15;
+        //                data[i] = squareWave;
+        //            }
 
-                    // 写入到 ViewModel 的环形缓冲区
-                    var vm = DataContext as MainWindowViewModel;
-                    vm?.WriteOscilloscopeData(channel, data);
-                }
+        //            // 写入到 ViewModel 的环形缓冲区
+        //            var vm = DataContext as MainWindowViewModel;
+        //            vm?.WriteOscilloscopeData(channel, data);
+        //        }
 
-                _testDataSampleCounter += POINTS_PER_MS;
-            }
-        }
-        #endregion
+        //        _testDataSampleCounter += POINTS_PER_MS;
+        //    }
+        //}
+        //#endregion
 
         
 

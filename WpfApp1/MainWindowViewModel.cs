@@ -318,7 +318,6 @@ namespace WpfApp1
                     
                     for (int i = 0; i < count; i++)
                     {
-                        
                         result[i] = _buffer[readIndex];
                         readIndex = (readIndex + 1) % Capacity;
                     }
@@ -337,15 +336,17 @@ namespace WpfApp1
             }
         }
 
+
+
         /// <summary>
         /// 示波器数据缓存 - 每个通道独立的高性能环形缓冲区
         /// </summary>
         private readonly Dictionary<int, CircularBuffer> _oscilloscopeBuffers = new()
         {
-            { 1, new CircularBuffer(20000) },  // 通道1：2000个点容量
-            { 2, new CircularBuffer(20000) },  // 通道2：2000个点容量
-            { 3, new CircularBuffer(20000) },  // 通道3：2000个点容量
-            { 4, new CircularBuffer(20000) }   // 通道4：2000个点容量
+            { 1, new CircularBuffer(50000) },  // 通道1：2000个点容量
+            { 2, new CircularBuffer(50000) },  // 通道2：2000个点容量
+            { 3, new CircularBuffer(50000) },  // 通道3：2000个点容量
+            { 4, new CircularBuffer(50000) }   // 通道4：2000个点容量
         };
 
         /// <summary>
@@ -1677,8 +1678,6 @@ namespace WpfApp1
             {
                 window.Owner = owner;
                 window.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner;
-               
-          
             }
             else
             {
@@ -2240,6 +2239,7 @@ namespace WpfApp1
             timer?.Stop();
             CleanupModbusReadThread();
         }
+        double i = 0;
         /// <summary>
         /// 处理CAN实时数据帧，提取示波器数据
         /// 设备每2ms发送一组数据，此方法负责解析并存入环形缓冲区
@@ -2261,7 +2261,15 @@ namespace WpfApp1
                     int hi = payload[idx + 1];
                     int rawValue = (hi << 8) | lo;
                     double value = ConvertRawValueToDouble(rawValue);
-                
+
+                    if (i==value-1)
+                    {
+                        i=value;
+                    }
+                    else{
+                        Debug.WriteLine($"数据跳变: {i} -> {value}");
+                        i =value;
+                    }
                     dataPoints.Add(value);
                     idx += 2;
                 }
@@ -2309,7 +2317,7 @@ namespace WpfApp1
                 return data;
             }
         }
-
+        
         /// <summary>
         /// 写入示波器数据到环形缓冲区（用于测试数据生成）
         /// </summary>
