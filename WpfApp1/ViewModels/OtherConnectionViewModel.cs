@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Collections.Generic;
 using System.Windows;
 using WpfApp1.Service;
 
@@ -12,8 +13,6 @@ namespace WpfApp1.ViewModels;
 /// </summary>
 public partial class OtherConnectionViewModel : ObservableObject
 {
-    // 消息列表的最大行数，超过后会自动截断，防止内存占用过高
-    private const int MaxMessageLines = 500;
     // 其他连接服务实例，用于实际执行与设备的通信操作
     private readonly OtherConnectionService _otherConnectionService;
 
@@ -24,28 +23,16 @@ public partial class OtherConnectionViewModel : ObservableObject
     private string _connectionStatus = "未连接";
 
     /// <summary>
-    /// 消息列表内容，用于显示设备发送的消息
+    /// 合并后的操作按钮文本（打开设备/初始化CAN/启动CAN）
     /// </summary>
     [ObservableProperty]
-    private string _listBoxContent = "";
+    private string _operationButtonText = "打开设备";
 
     /// <summary>
-    /// 打开设备按钮是否可用
+    /// 操作按钮是否可用
     /// </summary>
     [ObservableProperty]
-    private bool _isDeviceOpenEnabled = true;
-
-    /// <summary>
-    /// 初始化按钮是否可用
-    /// </summary>
-    [ObservableProperty]
-    private bool _isInitializeEnabled;
-
-    /// <summary>
-    /// 启动按钮是否可用
-    /// </summary>
-    [ObservableProperty]
-    private bool _isStartEnabled;
+    private bool _isOperationEnabled = true;
 
     /// <summary>
     /// 关闭设备按钮是否可用
@@ -113,11 +100,7 @@ public partial class OtherConnectionViewModel : ObservableObject
     [ObservableProperty]
     private int _selectedChannelIndex;
 
-    /// <summary>
-    /// 是否滚动到消息列表末尾，用于自动滚动到最新消息
-    /// </summary>
-    [ObservableProperty]
-    private bool _scrollToEnd;
+
 
     /// <summary>
     /// 初始化其他连接ViewModel。
@@ -157,73 +140,60 @@ public partial class OtherConnectionViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 打开设备命令，通过RelayCommand绑定到UI按钮
+    /// 统一操作命令，点击一次自动完成所有连接步骤（打开设备→初始化CAN→启动CAN）
     /// </summary>
     [RelayCommand]
-    private async Task OpenDevice()
+    private async Task Operation()
     {
-        // 调用服务的OpenDeviceAsync方法打开设备，返回操作结果
-        var result = await _otherConnectionService.OpenDeviceAsync();
-        // 处理操作结果，如果操作失败则返回
-        if (!HandleResult(result))
+        IsOperationEnabled = false;
+        
+        // 步骤1：打开设备
+        if (!_otherConnectionService.IsOpen)
         {
-            return;
+            var openResult = await _otherConnectionService.OpenDeviceAsync();
+            if (!HandleResult(openResult))
+            {
+                IsOperationEnabled = true;
+                return;
+            }
+            ConnectionStatus = "已连接设备";
         }
 
-        // 更新连接状态为已连接设备
-        ConnectionStatus = "已连接设备";
-        // 更新命令按钮状态，根据新的设备状态设置按钮可用性
-        UpdateCommandStates();
-    }
-
-    /// <summary>
-    /// 初始化CAN设备命令，通过RelayCommand绑定到UI按钮
-    /// </summary>
-    [RelayCommand]
-    private void Initialize()
-    {
-        // 创建连接选项对象，包含所有必要的配置参数
-        // 然后调用服务的Initialize方法初始化设备
-        var result = _otherConnectionService.Initialize(new OtherConnectionOptions(
-            IsCustomBaudrate,        // 是否使用自定义波特率
-            CustomBaudrate,          // 自定义波特率值
-            SelectedArbitrationBaudrateIndex,  // 仲裁波特率索引
-            SelectedDataBaudrateIndex,        // 数据波特率索引
-            IsNormalMode,            // 是否为正常模式
-            IsIsoStandard,           // 是否为ISO标准
-            IsTerminationEnable,     // 是否启用终端电阻
-            SelectedFilterModeIndex));  // 过滤器模式索引
-
-        // 处理操作结果，如果操作失败则返回
-        if (!HandleResult(result))
+        // 步骤2：初始化CAN
+        if (!_otherConnectionService.IsInitialized)
         {
-            return;
+            var initResult = _otherConnectionService.Initialize(new OtherConnectionOptions(
+                IsCustomBaudrate,
+                CustomBaudrate,
+                SelectedArbitrationBaudrateIndex,
+                SelectedDataBaudrateIndex,
+                IsNormalMode,
+                IsIsoStandard,
+                IsTerminationEnable,
+                SelectedFilterModeIndex));
+
+            if (!HandleResult(initResult))
+            {
+                IsOperationEnabled = true;
+                return;
+            }
+            ConnectionStatus = "CAN已初始化";
         }
 
-        // 更新连接状态为CAN已初始化
-        ConnectionStatus = "CAN已初始化";
-        // 更新命令按钮状态，根据新的设备状态设置按钮可用性
-        UpdateCommandStates();
-    }
-
-    /// <summary>
-    /// 启动CAN设备命令，通过RelayCommand绑定到UI按钮
-    /// </summary>
-    [RelayCommand]
-    private void Start()
-    {
-        // 调用服务的Start方法启动设备
-        var result = _otherConnectionService.Start();
-        // 处理操作结果，如果操作失败则返回
-        if (!HandleResult(result))
+        // 步骤3：启动CAN
+        if (!_otherConnectionService.IsStarted)
         {
-            return;
+            var startResult = _otherConnectionService.Start();
+            if (!HandleResult(startResult))
+            {
+                IsOperationEnabled = true;
+                return;
+            }
+            ConnectionStatus = "CAN已启动";
         }
 
-        // 更新连接状态为CAN已启动
-        ConnectionStatus = "CAN已启动";
-        // 更新命令按钮状态，根据新的设备状态设置按钮可用性
         UpdateCommandStates();
+        IsOperationEnabled = true;
     }
 
     /// <summary>
@@ -246,54 +216,7 @@ public partial class OtherConnectionViewModel : ObservableObject
         UpdateCommandStates();
     }
 
-    /// <summary>
-    /// 发送消息命令，通过RelayCommand绑定到UI按钮
-    /// </summary>
-    [RelayCommand]
-    private void Sendmessage()
-    {
-        // 调用服务的SendDefaultMessage方法发送默认消息，指定通道索引
-        var result = _otherConnectionService.SendDefaultMessage(SelectedChannelIndex);
-        // 处理操作结果
-        HandleResult(result);
-    }
 
-
-    /// <summary>
-    /// 将消息添加到消息列表中
-    /// 限制消息列表的最大行数，防止内存占用过高
-    /// </summary>
-    /// <param name="messages">要添加的消息列表</param>
-    private void AppendMessages(IReadOnlyList<string> messages)
-    {
-        // 如果没有消息，直接返回
-        if (messages.Count == 0)
-        {
-            return;
-        }
-
-        // 将现有消息分割成行，便于管理
-        var existingLines = ListBoxContent
-            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
-            .ToList();
-
-        // 添加新消息到现有消息列表
-        existingLines.AddRange(messages);
-
-        // 如果消息行数超过最大值，截取最新的MaxMessageLines行
-        // 这样可以防止消息列表过长导致内存占用过高
-        if (existingLines.Count > MaxMessageLines)
-        {
-            existingLines = existingLines
-                .Skip(existingLines.Count - MaxMessageLines)  // 跳过旧消息
-                .ToList();
-        }
-
-        // 更新消息列表内容，将所有消息行合并为一个字符串
-        ListBoxContent = string.Join(Environment.NewLine, existingLines);
-        // 切换ScrollToEnd值，触发UI滚动到底部，确保用户能看到最新消息
-        ScrollToEnd = !ScrollToEnd;
-    }
 
     /// <summary>
     /// 处理操作结果
@@ -309,10 +232,10 @@ public partial class OtherConnectionViewModel : ObservableObject
             return true;
         }
 
-        // 如果有详细信息，添加到消息列表，便于用户查看详细错误信息
+        // 如果有详细信息，显示消息框
         if (!string.IsNullOrWhiteSpace(result.Detail))
         {
-            AppendMessages(new[] { result.Detail });
+            MessageBox.Show(result.Detail);
         }
 
         // 如果有错误消息，显示消息框，向用户提示错误
@@ -328,28 +251,38 @@ public partial class OtherConnectionViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 根据设备状态更新命令按钮的可用性
+    /// 根据设备状态更新命令按钮的可用性和文本
     /// 确保按钮的状态与设备当前状态匹配，提供良好的用户体验
     /// </summary>
     private void UpdateCommandStates()
     {
-        // 如果设备未打开
         if (!_otherConnectionService.IsOpen)
         {
-            // 只有打开设备按钮可用
-            IsDeviceOpenEnabled = true;
-            IsInitializeEnabled = false;
-            IsStartEnabled = false;
+            // 设备未打开
+            OperationButtonText = "打开设备";
+            IsOperationEnabled = true;
             IsCloseEnabled = false;
-            return;
         }
-
-        // 如果设备已打开
-        IsDeviceOpenEnabled = false;  // 禁用打开设备按钮，避免重复打开
-        IsCloseEnabled = true;        // 启用关闭设备按钮
-        // 只有当设备未初始化时，初始化按钮才可用
-        IsInitializeEnabled = !_otherConnectionService.IsInitialized;
-        // 只有当设备已初始化且未启动时，启动按钮才可用
-        IsStartEnabled = _otherConnectionService.IsInitialized && !_otherConnectionService.IsStarted;
+        else if (!_otherConnectionService.IsInitialized)
+        {
+            // 设备已打开但未初始化
+            OperationButtonText = "初始化CAN";
+            IsOperationEnabled = true;
+            IsCloseEnabled = true;
+        }
+        else if (!_otherConnectionService.IsStarted)
+        {
+            // 设备已初始化但未启动
+            OperationButtonText = "启动CAN";
+            IsOperationEnabled = true;
+            IsCloseEnabled = true;
+        }
+        else
+        {
+            // 设备已启动
+            OperationButtonText = "运行中";
+            IsOperationEnabled = false;
+            IsCloseEnabled = true;
+        }
     }
 }

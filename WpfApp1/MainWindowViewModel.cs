@@ -94,7 +94,22 @@ namespace WpfApp1
         /// <summary>
         /// 是否打开了参数表
         /// </summary>
-        bool IsOpenExcel = false;
+        private bool _isExcelOpen = false;
+
+        /// <summary>
+        /// 是否打开了串口连接窗口
+        /// </summary>
+        private bool _isSerialPortOpen = false;
+
+        /// <summary>
+        /// 是否打开了CAN连接窗口
+        /// </summary>
+        private bool _isOtherConnectionOpen = false;
+
+        /// <summary>
+        /// 是否打开了固件升级窗口
+        /// </summary>
+        private bool _isFirmwareUpdateOpen = false;
         /// <summary>
         /// 定时器，用于定期更新UI
         /// </summary>
@@ -208,6 +223,23 @@ namespace WpfApp1
         private string _channel1Selected = "无";
 
         /// <summary>
+        /// 连接状态文本
+        /// </summary>
+        [ObservableProperty]
+        private string _connectionStatusText = "未连接";
+
+        /// <summary>
+        /// 连接状态颜色
+        /// </summary>
+        [ObservableProperty]
+        private System.Windows.Media.Brush _connectionStatusColor = System.Windows.Media.Brushes.Gray;
+
+        /// <summary>
+        /// 通信错误类型
+        /// </summary>
+        private string _communicationError = string.Empty;
+
+        /// <summary>
         /// 通道1选择变更时的处理
         /// </summary>
         partial void OnChannel1SelectedChanged(string value)
@@ -255,6 +287,81 @@ namespace WpfApp1
         partial void OnChannel4SelectedChanged(string value)
         {
             UpdateChannelSelectionStatus();
+        }
+
+        /// <summary>
+        /// 串口连接状态变更事件处理
+        /// </summary>
+        private void OnModbusConnectionStatusChanged(object? sender, bool isConnected)
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                // 连接状态变更时清除错误状态
+                if (isConnected)
+                {
+                    SetCommunicationError("");
+                }
+                UpdateConnectionStatus();
+            });
+        }
+
+        /// <summary>
+        /// 通信错误事件处理
+        /// </summary>
+        private void OnCommunicationErrorOccurred(object? sender, string errorType)
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                SetCommunicationError(errorType);
+            });
+        }
+
+        /// <summary>
+        /// 更新连接状态文本
+        /// </summary>
+        private void UpdateConnectionStatus()
+        {
+            if (!string.IsNullOrEmpty(_communicationError))
+            {
+                ConnectionStatusText = _communicationError;
+                ConnectionStatusColor = System.Windows.Media.Brushes.Red;
+            }
+            else if (_modbusService.IsConnected)
+            {
+                ConnectionStatusText = "串口已连接";
+                ConnectionStatusColor = System.Windows.Media.Brushes.Blue;
+            }
+            else if (_otherConnectionService.IsStarted)
+            {
+                ConnectionStatusText = "CAN已连接";
+                ConnectionStatusColor = System.Windows.Media.Brushes.Blue;
+            }
+            else
+            {
+                ConnectionStatusText = "未连接";
+                ConnectionStatusColor = System.Windows.Media.Brushes.Gray;
+            }
+        }
+
+        /// <summary>
+        /// 设置通信错误状态
+        /// </summary>
+        /// <param name="errorType">错误类型："bus_timeout" 或 "data_error"</param>
+        public void SetCommunicationError(string errorType)
+        {
+            switch (errorType.ToLower())
+            {
+                case "bus_timeout":
+                    _communicationError = "总线超时";
+                    break;
+                case "data_error":
+                    _communicationError = "数据错误";
+                    break;
+                case "":
+                    _communicationError = string.Empty;
+                    break;
+            }
+            UpdateConnectionStatus();
         }
 
         /// <summary>
@@ -624,52 +731,52 @@ namespace WpfApp1
         /// 母线电压
         /// </summary>
         [ObservableProperty]
-        private string _voltage = "/";
+        private string _voltage = "";
         /// <summary>
         /// 驱动器温度
         /// </summary>
         [ObservableProperty]
-        private string _driveTemperature = "/";
+        private string _driveTemperature = "";
         /// <summary>
         /// 电机温度
         /// </summary>
         [ObservableProperty]
-        private string _motorTemperature = "/";
+        private string _motorTemperature = "";
         /// <summary>
         /// 电流给定
         /// </summary>
         [ObservableProperty]
-        private string _currentSet = "/";
+        private string _currentSet = "";
         /// <summary>
         /// 电流反馈峰值
         /// </summary>
         [ObservableProperty]
-        private string _currentFeedbackPeak = "/";
+        private string _currentFeedbackPeak = "";
         /// <summary>
         /// 电流有效值
         /// </summary>
         [ObservableProperty]
-        private string _currentRMS = "/";
+        private string _currentRMS = "";
         /// <summary>
         /// 速度给定
         /// </summary>
         [ObservableProperty]
-        private string _speedSet = "/";
+        private string _speedSet = "";
         /// <summary>
         /// 速度反馈
         /// </summary>
         [ObservableProperty]
-        private string _speedFeedback = "/";
+        private string _speedFeedback = "";
         /// <summary>
         /// 位置给定
         /// </summary>
         [ObservableProperty]
-        private string _positionSet = "/";
+        private string _positionSet = "";
         /// <summary>
         /// 位置反馈
         /// </summary>
         [ObservableProperty]
-        private string _positionFeedback = "/";
+        private string _positionFeedback = "";
         #endregion
 
         private bool _isFirstRead = true;
@@ -702,6 +809,13 @@ namespace WpfApp1
 
             // 初始化专用Modbus读取线程
             InitializeModbusReadThread();
+
+            // 订阅串口连接状态变更事件
+            _modbusService.ConnectionStatusChanged += OnModbusConnectionStatusChanged;
+            
+            // 订阅通信错误事件
+            _modbusService.CommunicationErrorOccurred += OnCommunicationErrorOccurred;
+            _otherConnectionService.CommunicationErrorOccurred += OnCommunicationErrorOccurred;
 
             Debug.WriteLine($"[MainWindowViewModel] 专用Modbus读取线程已启动，预加载 {_preloadedReadParameters.Count} 个参数");
         }
@@ -1013,18 +1127,56 @@ namespace WpfApp1
 
             var updateList = new List<(Pars parsItem, string parameterName, string value)>();
             
-            // 收集需要更新的参数（从缓存中读取）
+            // 收集需要更新的参数（从缓存中读取并处理数据类型）
             foreach (var param in _preloadedReadParameters)
             {
                 int address = ParseAddress(param.ParsID);
-                if (address > 0)
+                if (address <= 0)
+                    continue;
+
+                string dataType = param.ParsLX?.Trim().ToLower() ?? "";
+                string processedValue = string.Empty;
+                
+                // 根据数据类型进行处理
+                if (dataType == "int64")
                 {
-                    // 从modbusService缓存中获取最新值，而不是使用预加载的默认值
-                    string cachedValue = _modbusService?.GetCachedValue(address) ?? param.ParsVA;
-                    if (!string.IsNullOrEmpty(cachedValue))
+                    // int64类型：地址递增为高位到低位，当前行为最低位
+                    int? prev1 = GetCachedIntValue(address - 1);  // D2
+                    int? prev2 = GetCachedIntValue(address - 2);  // D1  
+                    int? prev3 = GetCachedIntValue(address - 3);  // D0(最高位)
+                    int? current = GetCachedIntValue(address);    // D3(最低位)
+                    
+                    if (prev1.HasValue && prev2.HasValue && prev3.HasValue && current.HasValue)
                     {
-                        updateList.Add((param, param.ParsNM, cachedValue));
+                        long combinedValue = ((long)prev3.Value << 48) | 
+                                            ((long)prev2.Value << 32) | 
+                                            ((long)prev1.Value << 16) | 
+                                            (current.Value & 0xFFFF);
+                        processedValue = ProcessParsValue(combinedValue.ToString(), param);
                     }
+                }
+                else if (dataType == "int32")
+                {
+                    // int32类型：当前行为低位，上一行为高位
+                    int? prev = GetCachedIntValue(address - 1);
+                    int? current = GetCachedIntValue(address);
+                    
+                    if (prev.HasValue && current.HasValue)
+                    {
+                        int combinedValue = (prev.Value << 16) | (current.Value & 0xFFFF);
+                        processedValue = ProcessParsValue(combinedValue.ToString(), param);
+                    }
+                }
+                else
+                {
+                    // 普通类型（int16/uint16等）直接读取并处理
+                    string rawValue = _modbusService?.GetCachedValue(address) ?? param.ParsVA;
+                    processedValue = ProcessParsValue(rawValue, param);
+                }
+                
+                if (!string.IsNullOrEmpty(processedValue))
+                {
+                    updateList.Add((param, param.ParsNM, processedValue));
                 }
             }
             
@@ -1043,6 +1195,92 @@ namespace WpfApp1
                 // 更新控制模式下拉框选择
                 UpdateControlModeSelection();
             });
+        }
+
+        /// <summary>
+        /// 从缓存获取整数值
+        /// </summary>
+        private int? GetCachedIntValue(int address)
+        {
+            string value = _modbusService?.GetCachedValue(address);
+            if (int.TryParse(value, out int result))
+                return result;
+            return null;
+        }
+
+        /// <summary>
+        /// 处理参数值（应用系数、小数位、显示格式）
+        /// </summary>
+        private string ProcessParsValue(string rawValue, Pars param)
+        {
+            if (string.IsNullOrEmpty(rawValue))
+                return string.Empty;
+
+            double result;
+            string dataType = param.ParsLX?.Trim().ToLower() ?? "";
+            
+            // 根据数据类型解析原始值
+            if (dataType == "int64")
+            {
+                if (!long.TryParse(rawValue, out long longValue))
+                    return rawValue;
+                result = longValue;
+            }
+            else if (dataType == "int32" || dataType == "int16")
+            {
+                if (!int.TryParse(rawValue, out int intValue))
+                    return rawValue;
+                result = intValue;
+            }
+            else if (dataType == "uint16")
+            {
+                if (!int.TryParse(rawValue, out int intValue))
+                    return rawValue;
+                result = intValue & 0xFFFF;  // 无符号处理
+            }
+            else
+            {
+                if (!double.TryParse(rawValue, out result))
+                    return rawValue;
+            }
+
+            // 应用系数（ParsXS）
+            if (double.TryParse(param.ParsXS, out double coefficient) && coefficient >= 0 && coefficient <= 1)
+            {
+                result *= coefficient;
+            }
+
+            // 确定小数位（ParsXSW）
+            int decimalPlaces = 0;
+            if (!string.IsNullOrEmpty(param.ParsXSW) && param.ParsXSW.StartsWith("F") && 
+                int.TryParse(param.ParsXSW.Substring(1), out int places))
+            {
+                decimalPlaces = places;
+            }
+
+            // 确定显示格式（ParsXSFS）
+            string format = "D";
+            if (!string.IsNullOrEmpty(param.ParsXSFS))
+            {
+                if (param.ParsXSFS.Trim().ToUpper() == "H")
+                    format = "X";
+                else if (param.ParsXSFS.Trim().ToUpper() == "D")
+                    format = "D";
+            }
+
+            // 格式化输出
+            if (format == "X")
+            {
+                int intValue = (int)Math.Round(result);
+                return intValue.ToString("X");
+            }
+            else
+            {
+                if (decimalPlaces > 0)
+                    return result.ToString($"F{decimalPlaces}");
+                else
+                    return ((int)Math.Round(result)).ToString();
+            }
         }
 
         /// <summary>
@@ -1287,6 +1525,7 @@ namespace WpfApp1
                             if (response == null || response.Length == 0)
                             {
                                 Debug.WriteLine($"[CanRead] 批量读取未收到响应或超时，地址: {currentStartAddress}, 数量: {registersToRead}");
+                                SetCommunicationError("bus_timeout");
                                 currentRegister += registersToRead;
                                 continue;
                             }
@@ -1528,9 +1767,12 @@ namespace WpfApp1
         [RelayCommand]
         public void OpenExcel()
         {
-            IsOpenExcel = true;
+            if (_isExcelOpen)
+                return;
+            
+            _isExcelOpen = true;
             var ExcelVm = _serviceProvider.GetRequiredService<ExcelViewModel>();
-            _dialogService.ShowWindow<Excel, ExcelViewModel>(ExcelVm);
+            _dialogService.ShowWindow<Excel, ExcelViewModel>(ExcelVm, () => _isExcelOpen = false);
         }
 
         /// <summary>
@@ -1539,8 +1781,12 @@ namespace WpfApp1
         [RelayCommand]
         public void OpenSerialPort()
         {
+            if (_isSerialPortOpen)
+                return;
+            
+            _isSerialPortOpen = true;
             var serialVm = _serviceProvider.GetRequiredService<SerialPortViewModel>();
-            _dialogService.ShowWindow<Serialport, SerialPortViewModel>(serialVm);
+            _dialogService.ShowWindow<Serialport, SerialPortViewModel>(serialVm, () => _isSerialPortOpen = false);
         }
 
         /// <summary>
@@ -1580,8 +1826,12 @@ namespace WpfApp1
         [RelayCommand]
         private void OpenOtherConnection()
         {
+            if (_isOtherConnectionOpen)
+                return;
+            
+            _isOtherConnectionOpen = true;
             var otherConnectionVm = _serviceProvider.GetRequiredService<OtherConnectionViewModel>();
-            _dialogService.ShowWindow<OtherConnection, OtherConnectionViewModel>(otherConnectionVm); 
+            _dialogService.ShowWindow<OtherConnection, OtherConnectionViewModel>(otherConnectionVm, () => _isOtherConnectionOpen = false); 
         }
 
         /// <summary>
@@ -1652,6 +1902,12 @@ namespace WpfApp1
         [RelayCommand]
         public async Task OpenFirmwareUpdate()
         {
+            // 检查窗口是否已打开
+            if (_isFirmwareUpdateOpen)
+                return;
+            
+            _isFirmwareUpdateOpen = true;
+            
             // 停止读取操作
             StopHighFrequencyRead();
             
@@ -1687,6 +1943,8 @@ namespace WpfApp1
             // 添加窗口关闭事件处理程序
             window.Closed += (sender, e) =>
             {
+                _isFirmwareUpdateOpen = false;
+                
                 // 窗口关闭时恢复读取操作
                 StartHighFrequencyRead();
                 
@@ -1979,7 +2237,6 @@ namespace WpfApp1
                 MessageBox.Show(errorMessage);
                 return false;
             }
-
             try
             {
                 var payload = _otherConnectionService.BuildWritePayload(startAddress, dataBytes);
@@ -1989,7 +2246,6 @@ namespace WpfApp1
                     MessageBox.Show($"{config.Name} CAN写入失败。");
                     return false;
                 }
-
                 return true;
             }
             catch (ArgumentOutOfRangeException)
@@ -2157,10 +2413,12 @@ namespace WpfApp1
         }
 
         /// <summary>
-        /// 定时器 tick 事件处理
+        /// UI界面更新
         /// </summary>
         private async void Timer_Tick(object? sender, EventArgs e)
         {
+            // 更新连接状态
+            UpdateConnectionStatus();
             // 从缓存更新UI界面
             UpdateUIFromCache();
         }
@@ -2197,14 +2455,14 @@ namespace WpfApp1
                         {
                             double processedValue = currentValue / 100;
                             CurrentFeedbackPeak = processedValue.ToString("F1") + "A";
+                            double rmsValue = processedValue / Math.Sqrt(2);
+                            CurrentRMS = rmsValue.ToString("F1") + "A";
                         }
                         else
                         {
                             CurrentFeedbackPeak = value + "A";
+                            CurrentRMS = value + "A";
                         }
-                        break;
-                    case "电流有效值":
-                        CurrentRMS = value + "A";
                         break;
                     case "速度给定":
                         SpeedSet = value;
@@ -2218,6 +2476,16 @@ namespace WpfApp1
                         break;
                     case "位置反馈":
                         PositionFeedback = value;
+                        break;
+                    case "系统状态":
+                        // 当系统状态等于0时，自动关闭使能
+                        if (int.TryParse(value, out int systemStatus) && systemStatus == 0)
+                        {
+                            IsEnableLatched = false;
+                            EnableButtonText = "使能";
+                            ForwardJogButtonText = "正向点动";
+                            ReverseJogButtonText = "反向点动";
+                        }
                         break;
                 }
             });
@@ -2262,14 +2530,14 @@ namespace WpfApp1
                     int rawValue = (hi << 8) | lo;
                     double value = ConvertRawValueToDouble(rawValue);
 
-                    if (i==value-1)
-                    {
-                        i=value;
-                    }
-                    else{
-                        Debug.WriteLine($"数据跳变: {i} -> {value}");
-                        i =value;
-                    }
+                    //if (/*i==value-1||*/i==value||i==value+1)
+                    //{
+                    //    i=value;
+                    //}
+                    //else{
+                    //    Debug.WriteLine($"数据跳变: {i} ==> {value}    |||跳动间隔==>   {i-value}    |||批次号==>{payload[1]}");
+                    //    i =value;
+                    //}
                     dataPoints.Add(value);
                     idx += 2;
                 }

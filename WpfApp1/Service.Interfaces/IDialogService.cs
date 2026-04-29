@@ -18,5 +18,11 @@ namespace WpfApp1.Service.Interfaces
         /// </summary>
         void ShowWindow<TView, TViewModel>(TViewModel viewModel)
           where TView : class, new();
+
+        /// <summary>
+        /// 打开指定窗口并绑定指定ViewModel，窗口关闭时执行回调。
+        /// </summary>
+        void ShowWindow<TView, TViewModel>(TViewModel viewModel, Action? onClosed)
+          where TView : class, new();
     }
 }

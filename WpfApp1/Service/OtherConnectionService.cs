@@ -253,9 +253,14 @@ public sealed class OtherConnectionService
     private Task? _consumerTask;
 
     /// <summary>
-    /// 当被动接收到任意 CAN 载荷时触发（原始载荷字节）
-    /// </summary>
-    public event Action<byte[]>? RealtimeFrameReceived;
+        /// 当被动接收到任意 CAN 载荷时触发（原始载荷字节）
+        /// </summary>
+        public event Action<byte[]>? RealtimeFrameReceived;
+
+        /// <summary>
+        /// 通信错误事件（bus_timeout 或 data_error）
+        /// </summary>
+        public event EventHandler<string>? CommunicationErrorOccurred;
 
 
     /// <summary>
@@ -790,6 +795,7 @@ public sealed class OtherConnectionService
                 }
             }
         }
+        CommunicationErrorOccurred?.Invoke(this, "bus_timeout");
         return Array.Empty<byte>();
 
     }

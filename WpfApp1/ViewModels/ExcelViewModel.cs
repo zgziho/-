@@ -460,28 +460,36 @@ namespace WpfApp1.ViewModels
                     if (correspondingItem != null)
                     {
                         
-                        // 检查是否为int32类型，需要查找上一行的值
-                        int? previousValue = null;
-                        if (!string.IsNullOrEmpty(correspondingItem.ParsLX) && correspondingItem.ParsLX.Trim().ToLower() == "int32")
+                        // 检查数据类型，查找所需的高位值
+                        int? prev1 = null, prev2 = null, prev3 = null;
+                        string dataType = correspondingItem.ParsLX?.Trim().ToLower() ?? "";
+                        
+                        if (dataType == "int64")
                         {
-                            // 查找上一行的地址（当前地址-1）
-                            int previousAddress = currentAddress - 1;
-                            var previousItem = readItems.FirstOrDefault(item =>
-                                int.TryParse(item.ParsID, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int prevAddr) &&
-                                prevAddr == previousAddress);
-                            
-                            if (previousItem != null)
+                            // int64类型：查找前3行的值（高位到低位，当前行为最低位）
+                            // prev1=地址-1(D2), prev2=地址-2(D1), prev3=地址-3(D0=最高位)
+                            for (int j = 1; j <= 3; j++)
                             {
-                                // 查找上一行的寄存器值
-                                int previousIndex = i - 1;
-                                if (previousIndex >= 0 && previousIndex < registers.Length)
+                                int prevIdx = i - j;
+                                if (prevIdx >= 0 && prevIdx < registers.Length)
                                 {
-                                    previousValue = registers[previousIndex];
+                                    if (j == 1) prev1 = registers[prevIdx];
+                                    else if (j == 2) prev2 = registers[prevIdx];
+                                    else if (j == 3) prev3 = registers[prevIdx];
                                 }
                             }
                         }
+                        else if (dataType == "int32")
+                        {
+                            // int32类型：查找上一行的值
+                            int previousIndex = i - 1;
+                            if (previousIndex >= 0 && previousIndex < registers.Length)
+                            {
+                                prev1 = registers[previousIndex];
+                            }
+                        }
                         
-                        var processedValue = ProcessRegisterValue(registers[i], correspondingItem, previousValue);
+                        var processedValue = ProcessRegisterValue(registers[i], correspondingItem, prev1, prev2, prev3);
                         correspondingItem.ParsVA = processedValue;
                     }
                 }
@@ -556,28 +564,36 @@ namespace WpfApp1.ViewModels
                             ProgressValue = Math.Min(holdTarget, ProgressValue + 1);
                         }
 
-                        // 检查是否为int32类型，需要查找上一行的值
-                        int? previousValue = null;
-                        if (!string.IsNullOrEmpty(correspondingItem.ParsLX) && correspondingItem.ParsLX.Trim().ToLower() == "int32")
+                        // 检查数据类型，查找所需的高位值
+                        int? prev1 = null, prev2 = null, prev3 = null;
+                        string dataType = correspondingItem.ParsLX?.Trim().ToLower() ?? "";
+                        
+                        if (dataType == "int64")
                         {
-                            // 查找上一行的地址（当前地址-1）
-                            int previousAddress = currentAddress - 1;
-                            var previousItem = readItems.FirstOrDefault(item =>
-                                int.TryParse(item.ParsID, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int prevAddr) &&
-                                prevAddr == previousAddress);
-                            
-                            if (previousItem != null)
+                            // int64类型：查找前3行的值（高位到低位，当前行为最低位）
+                            // prev1=地址-1(D2), prev2=地址-2(D1), prev3=地址-3(D0=最高位)
+                            for (int j = 1; j <= 3; j++)
                             {
-                                // 查找上一行的寄存器值
-                                int previousIndex = i - 1;
-                                if (previousIndex >= 0 && previousIndex < registers.Length)
+                                int prevIdx = i - j;
+                                if (prevIdx >= 0 && prevIdx < registers.Length)
                                 {
-                                    previousValue = registers[previousIndex];
+                                    if (j == 1) prev1 = registers[prevIdx];
+                                    else if (j == 2) prev2 = registers[prevIdx];
+                                    else if (j == 3) prev3 = registers[prevIdx];
                                 }
                             }
                         }
+                        else if (dataType == "int32")
+                        {
+                            // int32类型：查找上一行的值
+                            int previousIndex = i - 1;
+                            if (previousIndex >= 0 && previousIndex < registers.Length)
+                            {
+                                prev1 = registers[previousIndex];
+                            }
+                        }
 
-                        var processedValue = ProcessRegisterValue(registers[i], correspondingItem, previousValue);
+                        var processedValue = ProcessRegisterValue(registers[i], correspondingItem, prev1, prev2, prev3);
                         correspondingItem.ParsVA = processedValue;
                     }
                 }
@@ -597,7 +613,7 @@ namespace WpfApp1.ViewModels
         /// <param name="parsItem">参数项</param>
         /// <param name="previousValue">上一行的寄存器值（用于int32类型组合）</param>
         /// <returns>处理后的显示值</returns>
-        private string ProcessRegisterValue(int rawValue, Pars parsItem, int? previousValue = null)
+        private string ProcessRegisterValue(int rawValue, Pars parsItem, int? prevValue1 = null, int? prevValue2 = null, int? prevValue3 = null)
         {
             double result = rawValue;
             
@@ -606,11 +622,24 @@ namespace WpfApp1.ViewModels
             
             switch (dataType)
             {
+                case "int64":
+                    // int64类型：递增方向为高位到低位
+                    // 当前行为最低位(D3)，prevValue1=地址-1(D2), prevValue2=地址-2(D1), prevValue3=地址-3(D0)
+                    // 组合：D0 << 48 | D1 << 32 | D2 << 16 | D3
+                    if (prevValue1.HasValue && prevValue2.HasValue && prevValue3.HasValue)
+                    {
+                        long combinedValue = ((long)prevValue3.Value << 48) | 
+                                            ((long)prevValue2.Value << 32) | 
+                                            ((long)prevValue1.Value << 16) | 
+                                            (rawValue & 0xFFFF);
+                        result = combinedValue;
+                    }
+                    break;
                 case "int32":
                     // int32类型：将当前行（低位）和上一行（高位）组合成32位整数
-                    if (previousValue.HasValue)
+                    if (prevValue1.HasValue)
                     {
-                        int combinedValue = (previousValue.Value << 16) | (rawValue & 0xFFFF);
+                        int combinedValue = (prevValue1.Value << 16) | (rawValue & 0xFFFF);
                         result = combinedValue;
                     }
                     break;

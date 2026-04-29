@@ -467,7 +467,7 @@ namespace WpfApp1
         {
             InitializeComponent();
 
-            Loaded += MainWindow_Loaded;
+            //Loaded += MainWindow_Loaded;
 
             var app = (App)Application.Current;
             if (app.ServiceProvider == null)
@@ -563,18 +563,32 @@ namespace WpfApp1
                     buffer.AddRange(data);
                     for (int i = 0; i < data.Length; i++)
                     {
-                        if (y == data[i] - 1)
+                        //if (y == data[i] - 1)
+                        //{
+                        //    y = data[i];
+                        //}
+                        //else
+                        //{
+                        //    Debug.WriteLine($"数据变化：{y}===>{data[i]}");
+                        //    y = data[i];
+                        //}
+                        if (y==data[i]-1||y == data[i] || y == data[i] + 1)
                         {
                             y = data[i];
                         }
                         else
                         {
-                            Debug.WriteLine($"数据变化：{y}===>{data[i]}");
+                            if (y-data[i]>=500) {
+                                Debug.WriteLine($"数据跳变: {y} ==> {data[i]}    |||跳动间隔==>   {y - data[i]}    |||批次号==>{data[1]}");
+
+                            }
                             y = data[i];
                         }
                     }
-                        // 确保所有通道缓冲区大小一致
-                        SyncAllChannelBuffers();
+
+
+                    // 确保所有通道缓冲区大小一致
+                    SyncAllChannelBuffers();
 
                         // 限制缓冲区大小
                         if (buffer.Count > MAX_BUFFER_SIZE)

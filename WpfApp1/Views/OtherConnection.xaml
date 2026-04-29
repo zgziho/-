@@ -11,7 +11,6 @@
         Background="#F0F0F0">
     <Grid >
         <Grid.RowDefinitions>
-        <RowDefinition Height="150"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="90"/>
         </Grid.RowDefinitions>
@@ -91,85 +90,29 @@
             </Grid>
         </Border>
 
-        <Grid  Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition ></ColumnDefinition>
-                <ColumnDefinition></ColumnDefinition>
-            </Grid.ColumnDefinitions>
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                <TextBox x:Name="MessageTextBox" Text="{Binding ListBoxContent}" TextWrapping="Wrap" BorderThickness="0" IsReadOnly="True" AcceptsReturn="True" ScrollViewer.CanContentScroll="True" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
-                    <i:Interaction.Triggers>
-                        <i:DataTrigger Binding="{Binding ScrollToEnd}" Value="True">
-                            <i:InvokeCommandAction Command="{x:Static local:OtherConnection.ScrollToEndCommand}" CommandParameter="{Binding ElementName=MessageTextBox}"/>
-                        </i:DataTrigger>
-                    </i:Interaction.Triggers>
-                </TextBox>
-            </ScrollViewer>
-            <Button Grid.Column="1" Content="发送"  Command="{Binding SendmessageCommand}"></Button>
-        </Grid>
-        
-        
-        <Border Grid.Row="2"  Margin="5" CornerRadius="20"  BorderThickness="1" BorderBrush="#CCCCCC">
+        <Border Grid.Row="1"  Margin="5" CornerRadius="20"  BorderThickness="1" BorderBrush="#CCCCCC">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="0.7*"></ColumnDefinition>
                     <ColumnDefinition Width="0.5*"></ColumnDefinition>
                     <ColumnDefinition Width="AUTO"></ColumnDefinition>
                     <ColumnDefinition Width="AUTO"></ColumnDefinition>
-                    <ColumnDefinition Width="AUTO"></ColumnDefinition>
-                    <ColumnDefinition Width="AUTO"></ColumnDefinition>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="当前状态:" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"  FontSize="14"/>
                 <TextBlock Grid.Column="1" Text="{Binding ConnectionStatus}" HorizontalAlignment="Left" VerticalAlignment="Center"  FontSize="13" FontWeight="Bold"/>
 
-                <Button Content="打开设备" 
-                         Grid.Column="2"
-                         Command="{Binding OpenDeviceCommand}" 
-                         Width="80"
-                         Height="35"
-                         IsEnabled="{Binding IsDeviceOpenEnabled}"
-                         FontSize="13"
-                         FontWeight="Medium">
+                <Button Content="{Binding OperationButtonText}" 
+                        Grid.Column="2"
+                        Command="{Binding OperationCommand}" 
+                        Width="100"
+                        Height="35"
+                        IsEnabled="{Binding IsOperationEnabled}"
+                        FontSize="13"
+                        FontWeight="Medium">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsDeviceOpenEnabled}" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
-                <Button Content="初始化CAN" 
-                        Grid.Column="3"
-                         Command="{Binding InitializeCommand}" 
-                         Width="90"
-                         Height="35"
-                         IsEnabled="{Binding IsInitializeEnabled}"
-                         FontSize="13"
-                         FontWeight="Medium">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsInitializeEnabled}" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
-                <Button Content="启动CAN" 
-                        Grid.Column="4"
-                         Command="{Binding StartCommand}" 
-                         Width="80"
-                         Height="35"
-                         IsEnabled="{Binding IsStartEnabled}"
-                         FontSize="13"
-                         FontWeight="Medium">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsStartEnabled}" Value="False">
+                                <DataTrigger Binding="{Binding IsOperationEnabled}" Value="False">
                                     <Setter Property="Opacity" Value="0.5"/>
                                 </DataTrigger>
                             </Style.Triggers>
@@ -177,7 +120,7 @@
                     </Button.Style>
                 </Button>
                 <Button Content="关闭设备" 
-                        Grid.Column="5"
+                        Grid.Column="3"
                          Command="{Binding CloseDeviceCommand}" 
                          Width="80"
                          Height="35"

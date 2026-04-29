@@ -20,10 +20,19 @@ namespace WpfApp1.Service
             public void ShowWindow<TView, TViewModel>(TViewModel viewModel)
                 where TView : class, new()
             {
+                ShowWindow<TView, TViewModel>(viewModel, null);
+            }
+
+            /// <summary>
+            /// 创建并显示非模态窗口，并在窗口关闭时执行回调。
+            /// </summary>
+            public void ShowWindow<TView, TViewModel>(TViewModel viewModel, Action? onClosed)
+                where TView : class, new()
+            {
                 // 确保在UI线程中执行窗口操作
                 if (Application.Current?.Dispatcher != null && !Application.Current.Dispatcher.CheckAccess())
                 {
-                    Application.Current.Dispatcher.Invoke(() => ShowWindow<TView, TViewModel>(viewModel));
+                    Application.Current.Dispatcher.Invoke(() => ShowWindow<TView, TViewModel>(viewModel, onClosed));
                     return;
                 }
 
@@ -45,6 +54,12 @@ namespace WpfApp1.Service
                 else
                 {
                     window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+                }
+
+                // 3. 设置关闭回调
+                if (onClosed != null)
+                {
+                    window.Closed += (s, e) => onClosed();
                 }
 
                 // 使用非模态方式显示窗口，避免阻塞语音识别

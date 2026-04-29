@@ -71,6 +71,11 @@ namespace WpfApp1.Service
         public event EventHandler<bool>? ConnectionStatusChanged;
 
         /// <summary>
+        /// 通信错误事件（bus_timeout 或 data_error）
+        /// </summary>
+        public event EventHandler<string>? CommunicationErrorOccurred;
+
+        /// <summary>
         /// 写操作冷却时间（毫秒）
         /// </summary>
         public int WriteCooldownMilliseconds
@@ -258,6 +263,7 @@ namespace WpfApp1.Service
                 {
                     // 读取超时时回退到缓存值，降低界面阻塞概率
                     LogRead($"fallback:timeout_cache slave={slaveAddress} start={normalizedStart} count={numberOfPoints}");
+                    CommunicationErrorOccurred?.Invoke(this, "bus_timeout");
                     return TryGetCachedHoldingRegisters(parsedStart, numberOfPoints, 2000);
                 }
             }
@@ -265,6 +271,7 @@ namespace WpfApp1.Service
             {
                 // 读取异常时同样回退到缓存
                 LogRead($"fallback:exception_cache slave={slaveAddress} start={normalizedStart} count={numberOfPoints} ex={ex.GetType().Name}:{ex.Message}");
+                CommunicationErrorOccurred?.Invoke(this, "data_error");
                 return TryGetCachedHoldingRegisters(parsedStart, numberOfPoints, 2000);
             }
             finally
