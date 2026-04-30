@@ -754,6 +754,20 @@
             <StackPanel ClipToBounds="True" Orientation="Horizontal" VerticalAlignment="Center" Background="Transparent" Margin="0">
                 <Label Content="系统状态: " HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontWeight="Bold" Margin="20 0 0 0"/>
                 <Label Content="{Binding ConnectionStatusText}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0 0 20 0" Foreground="{Binding ConnectionStatusColor}"/>
+                <Label Content="{Binding ServoEnableStatus}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0 0 20 0" Foreground="Green"/>
+                <Label Content="系统故障: " HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontWeight="Bold" Margin="0 0 0 0">
+                    <Label.Style>
+                        <Style TargetType="Label">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SystemFault}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Label.Style>
+                </Label>
+                <Label Content="{Binding SystemFault}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0 0 20 0" Foreground="Red"/>
             </StackPanel>
         </Border>
 

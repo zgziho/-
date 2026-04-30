@@ -628,9 +628,9 @@ namespace WpfApp1.ViewModels
                     // 组合：D0 << 48 | D1 << 32 | D2 << 16 | D3
                     if (prevValue1.HasValue && prevValue2.HasValue && prevValue3.HasValue)
                     {
-                        long combinedValue = ((long)prevValue3.Value << 48) | 
-                                            ((long)prevValue2.Value << 32) | 
-                                            ((long)prevValue1.Value << 16) | 
+                        long combinedValue = ((long)(prevValue3.Value & 0xFFFF) << 48) | 
+                                            ((long)(prevValue2.Value & 0xFFFF) << 32) | 
+                                            ((long)(prevValue1.Value & 0xFFFF) << 16) | 
                                             (rawValue & 0xFFFF);
                         result = combinedValue;
                     }
@@ -639,7 +639,7 @@ namespace WpfApp1.ViewModels
                     // int32类型：将当前行（低位）和上一行（高位）组合成32位整数
                     if (prevValue1.HasValue)
                     {
-                        int combinedValue = (prevValue1.Value << 16) | (rawValue & 0xFFFF);
+                        int combinedValue = ((prevValue1.Value & 0xFFFF) << 16) | (rawValue & 0xFFFF);
                         result = combinedValue;
                     }
                     break;

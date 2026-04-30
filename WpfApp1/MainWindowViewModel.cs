@@ -235,6 +235,18 @@ namespace WpfApp1
         private System.Windows.Media.Brush _connectionStatusColor = System.Windows.Media.Brushes.Gray;
 
         /// <summary>
+        /// 伺服使能状态（当系统状态等于1时显示"伺服使能"，否则为空）
+        /// </summary>
+        [ObservableProperty]
+        private string _servoEnableStatus = string.Empty;
+
+        /// <summary>
+        /// 系统故障信息
+        /// </summary>
+        [ObservableProperty]
+        private string _systemFault = string.Empty;
+
+        /// <summary>
         /// 通信错误类型
         /// </summary>
         private string _communicationError = string.Empty;
@@ -306,12 +318,34 @@ namespace WpfApp1
         }
 
         /// <summary>
+        /// CAN连接状态变更事件处理
+        /// </summary>
+        private void OnOtherConnectionStatusChanged(object? sender, bool isConnected)
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                // CAN连接断开时清除错误状态
+                if (!isConnected)
+                {
+                    SetCommunicationError("");
+                }
+                UpdateConnectionStatus();
+            });
+        }
+
+        /// <summary>
         /// 通信错误事件处理
         /// </summary>
         private void OnCommunicationErrorOccurred(object? sender, string errorType)
         {
             Application.Current?.Dispatcher.Invoke(() =>
             {
+                // 如果当前已经是总线超时状态，且新的错误也是总线超时，则不再重复触发
+                // 避免在总线超时状态下持续尝试通讯造成的性能损失
+                if (_communicationError == "总线超时" && errorType.ToLower() == "bus_timeout")
+                {
+                    return;
+                }
                 SetCommunicationError(errorType);
             });
         }
@@ -813,6 +847,9 @@ namespace WpfApp1
             // 订阅串口连接状态变更事件
             _modbusService.ConnectionStatusChanged += OnModbusConnectionStatusChanged;
             
+            // 订阅CAN连接状态变更事件
+            _otherConnectionService.ConnectionStatusChanged += OnOtherConnectionStatusChanged;
+            
             // 订阅通信错误事件
             _modbusService.CommunicationErrorOccurred += OnCommunicationErrorOccurred;
             _otherConnectionService.CommunicationErrorOccurred += OnCommunicationErrorOccurred;
@@ -921,6 +958,17 @@ namespace WpfApp1
             {
                 if (payload == null || payload.Length == 0)
                     return;
+
+                // 当成功接收到CAN数据时，如果当前有通信错误状态，清除错误状态
+                // 避免频繁触发状态更新，如果状态已经是正常（_communicationError为空），就不触发更新
+                if (!string.IsNullOrEmpty(_communicationError))
+                {
+                    Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        SetCommunicationError("");
+                        UpdateConnectionStatus();
+                    });
+                }
 
                 // 首字节为 0x31..0x34，代表通道 1..4；也可能为 0x30 表示其他类型
                 byte first = payload[0];
@@ -1148,9 +1196,9 @@ namespace WpfApp1
                     
                     if (prev1.HasValue && prev2.HasValue && prev3.HasValue && current.HasValue)
                     {
-                        long combinedValue = ((long)prev3.Value << 48) | 
-                                            ((long)prev2.Value << 32) | 
-                                            ((long)prev1.Value << 16) | 
+                        long combinedValue = ((long)(prev3.Value & 0xFFFF) << 48) | 
+                                            ((long)(prev2.Value & 0xFFFF) << 32) | 
+                                            ((long)(prev1.Value & 0xFFFF) << 16) | 
                                             (current.Value & 0xFFFF);
                         processedValue = ProcessParsValue(combinedValue.ToString(), param);
                     }
@@ -1163,7 +1211,7 @@ namespace WpfApp1
                     
                     if (prev.HasValue && current.HasValue)
                     {
-                        int combinedValue = (prev.Value << 16) | (current.Value & 0xFFFF);
+                        int combinedValue = ((prev.Value & 0xFFFF) << 16) | (current.Value & 0xFFFF);
                         processedValue = ProcessParsValue(combinedValue.ToString(), param);
                     }
                 }
@@ -1528,6 +1576,14 @@ namespace WpfApp1
                                 SetCommunicationError("bus_timeout");
                                 currentRegister += registersToRead;
                                 continue;
+                            }
+
+                            // 主动读取成功，如果当前有通信错误状态，清除错误状态
+                            // 避免频繁触发状态更新，如果状态已经是正常（_communicationError为空），就不触发更新
+                            if (!string.IsNullOrEmpty(_communicationError))
+                            {
+                                SetCommunicationError("");
+                                UpdateConnectionStatus();
                             }
 
                             // 处理响应数据
@@ -2453,9 +2509,11 @@ namespace WpfApp1
                         // 将电流反馈数据除100，保留一位小数
                         if (double.TryParse(value, out double currentValue))
                         {
-                            double processedValue = currentValue / 100;
+                            //电流反馈峰值
+                            double processedValue = currentValue;
                             CurrentFeedbackPeak = processedValue.ToString("F1") + "A";
-                            double rmsValue = processedValue / Math.Sqrt(2);
+                            //电流反馈有效值
+                            double rmsValue = processedValue*1.414;
                             CurrentRMS = rmsValue.ToString("F1") + "A";
                         }
                         else
@@ -2471,7 +2529,6 @@ namespace WpfApp1
                         SpeedFeedback = value;
                         break;
                     case "位置给定":
-                        CurrentSet = value;
                         PositionSet=value;
                         break;
                     case "位置反馈":
@@ -2486,6 +2543,12 @@ namespace WpfApp1
                             ForwardJogButtonText = "正向点动";
                             ReverseJogButtonText = "反向点动";
                         }
+                        // 当系统状态等于1时，显示伺服使能
+                        ServoEnableStatus = int.TryParse(value, out systemStatus) && systemStatus == 1 ? "伺服使能" : string.Empty;
+                        break;
+                    case "系统故障":
+                        // 只有当故障值大于0时才显示
+                        SystemFault = int.TryParse(value, out int faultValue) && faultValue > 0 ? value : string.Empty;
                         break;
                 }
             });
@@ -2504,8 +2567,54 @@ namespace WpfApp1
         /// </summary>
         public void Dispose()
         {
+            // 在后台线程执行清理操作，避免UI线程死锁
+            Task.Run(async () =>
+            {
+                await ShutdownCleanup().ConfigureAwait(false);
+            }).Wait();
+            
             timer?.Stop();
             CleanupModbusReadThread();
+        }
+
+        /// <summary>
+        /// 程序关闭前的清理操作
+        /// 向使能和示波器开启的地址发送0，确保设备安全关闭
+        /// </summary>
+        private async Task ShutdownCleanup()
+        {
+            try
+            {
+                bool hasValidConnection = _modbusService.IsConnected || _otherConnectionService.IsStarted;
+                bool hasCommunicationError = !string.IsNullOrEmpty(_communicationError);
+                
+                if (!hasValidConnection || hasCommunicationError)
+                {
+                    string reason = hasCommunicationError ? 
+                        $"通信错误: {_communicationError}" : 
+                        "串口和CAN口均未连接";
+                    Debug.WriteLine($"[Shutdown] {reason}，跳过清理操作");
+                    return;
+                }
+
+                if (_jogConfigs.TryGetValue("使能", out var enableConfig))
+                {
+                    await WriteConfigValueAsync(enableConfig, "0").ConfigureAwait(false);
+                    Debug.WriteLine("[Shutdown] 已向使能地址发送0");
+                }
+                
+                if (_jogConfigs.TryGetValue("示波器开启", out var oscilloscopeConfig))
+                {
+                    await WriteConfigValueAsync(oscilloscopeConfig, "0").ConfigureAwait(false);
+                    Debug.WriteLine("[Shutdown] 已向示波器开启地址发送0");
+                }
+                
+                await Task.Delay(100).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Shutdown] 清理操作失败: {ex.Message}");
+            }
         }
         double i = 0;
         /// <summary>

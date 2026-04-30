@@ -262,6 +262,11 @@ public sealed class OtherConnectionService
         /// </summary>
         public event EventHandler<string>? CommunicationErrorOccurred;
 
+        /// <summary>
+        /// 连接状态变更事件
+        /// </summary>
+        public event EventHandler<bool>? ConnectionStatusChanged;
+
 
     /// <summary>
     /// 获取设备是否打开
@@ -463,6 +468,9 @@ public sealed class OtherConnectionService
         // 重置通道句柄和启动状态
         Array.Fill(_channelHandles, IntPtr.Zero);
         Array.Fill(_channelStarted, false);
+
+        // 异步触发连接状态变更事件，避免在持有锁的情况下触发事件导致死锁
+        _ = Task.Run(() => ConnectionStatusChanged?.Invoke(this, false));
 
         return OtherConnectionResult.Success();
     }

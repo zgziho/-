@@ -1023,6 +1023,10 @@ namespace WpfApp1
             _recognizer?.RecognizeAsyncStop();
             _recognizer?.Dispose();
             _synthesizer?.Dispose();
+            
+            // 调用ViewModel的Dispose方法，确保关闭前发送清理数据
+            (viewModel as IDisposable)?.Dispose();
+            
             base.OnClosed(e);
         }
 

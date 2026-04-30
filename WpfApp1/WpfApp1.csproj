@@ -6,7 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="JogConfig.xlsx" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.0" />
@@ -19,12 +24,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="NativeDLLs\zlgcan.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <Content Include="NativeDLLs\zlgcan.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <EmbeddedResource Include="NativeDLLs\zlgcan.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="JogConfig.xlsx" />
   </ItemGroup>
 
 </Project>

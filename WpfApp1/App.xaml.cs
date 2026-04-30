@@ -1,3 +1,4 @@
+using System;
 using System.Configuration;
 using System.Data;
 using System.Windows;
@@ -9,25 +10,52 @@ using WpfApp1.Service.Interfaces;
 
 namespace WpfApp1
 {
-    /// <summary>
-    /// 应用程序入口：
-    /// 负责启动生命周期与全局依赖注入容器初始化。
-    /// </summary>
     public partial class App : Application
     {
         public IServiceProvider? ServiceProvider { get; private set; }
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+            DispatcherUnhandledException += App_DispatcherUnhandledException;
+            
             base.OnStartup(e);
-            // 统一注册服务和ViewModel，供主窗口和弹窗按需解析
+            
+            try
+            {
+                NativeLibraryLoader.Initialize();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"初始化原生库失败: {ex.Message}\n{ex.StackTrace}", "启动错误", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                Environment.Exit(1);
+                return;
+            }
+            
             var services = new ServiceCollection();
             ConfigureServices(services);
             ServiceProvider = services.BuildServiceProvider();
         }
 
+        private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            MessageBox.Show($"UI线程未处理异常: {e.Exception.Message}\n{e.Exception.StackTrace}", 
+                "运行时错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            e.Handled = true;
+        }
+
+        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            var exception = e.ExceptionObject as Exception;
+            MessageBox.Show($"未处理异常: {exception?.Message ?? "未知错误"}\n{exception?.StackTrace}", 
+                "致命错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+
         protected override void OnExit(ExitEventArgs e)
         {
+            AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
+            DispatcherUnhandledException -= App_DispatcherUnhandledException;
             base.OnExit(e);
         }
 
